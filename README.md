@@ -1,4 +1,4 @@
-# ElimuSMS Tier1 - 80/20 Optimized Solution
+# ElimuSMS 
 
 **Target Size:** ~45KB (from 300KB)  
 **Compression:** 85% size reduction  
