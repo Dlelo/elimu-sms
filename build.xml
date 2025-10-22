@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="ElimuSMS-Tier1" default="build" basedir=".">
+
+    <property environment="env"/>
+    <property name="wtk.home" value="${env.WTK_HOME}"/>
+    <property name="midp.lib" value="${wtk.home}/lib/midpapi20.jar"/>
+    <property name="cldc.lib" value="${wtk.home}/lib/cldcapi11.jar"/>
+
+    <target name="init">
+        <echo message="Java ME SDK: ${wtk.home}"/>
+        <available file="${wtk.home}/bin/emulator" property="emulator.exists"/>
+        <fail unless="emulator.exists" message="Java ME SDK not found at ${wtk.home}"/>
+    </target>
+
+    <target name="build" depends="init">
+        <mkdir dir="build/classes"/>
+        <mkdir dir="build/resources"/>
+
+        <!-- Copy resources -->
+        <copy todir="build/resources">
+            <fileset dir="resources"/>
+        </copy>
+
+        <!-- Compile -->
+        <javac srcdir="src"
+               destdir="build/classes"
+               bootclasspath="${midp.lib}"
+               source="1.3"
+               target="1.1"
+               debug="false"
+               includeAntRuntime="false">
+            <classpath>
+                <pathelement path="${midp.lib}"/>
+                <pathelement path="${cldc.lib}"/>
+            </classpath>
+        </javac>
+
+        <!-- Create JAR -->
+        <jar jarfile="ElimuSMS.jar"
+             basedir="build/classes"
+             includes="**/*.class">
+            <fileset dir="build/resources"/>
+        </jar>
+
+        <!-- Get JAR size -->
+        <length file="ElimuSMS.jar" property="jar.size"/>
+
+        <!-- Create JAD -->
+        <echo file="ElimuSMS.jad">MIDlet-Name: ElimuSMS
+            MIDlet-Version: 1.0.0
+            MIDlet-Vendor: ElimuTech
+            MIDlet-Description: AI-Powered CBC Learning (Tier1 Optimized)
+            MIDlet-1: ElimuSMS,,com.elimu.ElimuSMSMidlet
+            MicroEdition-Configuration: CLDC-1.1
+            MicroEdition-Profile: MIDP-2.0
+            MIDlet-Jar-URL: ElimuSMS.jar
+            MIDlet-Jar-Size: ${jar.size}
+        </echo>
+
+        <echo message="✅ BUILD SUCCESS: JAR size = ${jar.size} bytes"/>
+        <echo message="📱 Expected: ~45KB (Tier1 Optimized)"/>
+    </target>
+
+    <target name="clean">
+        <delete dir="build"/>
+        <delete file="ElimuSMS.jar"/>
+        <delete file="ElimuSMS.jad"/>
+        <echo message="🧹 Clean completed"/>
+    </target>
+
+    <target name="run" depends="build">
+        <exec executable="${wtk.home}/bin/emulator" spawn="true">
+            <arg value="-Xdevice:DefaultCldcPhone1"/>
+            <arg value="-Xdescriptor:ElimuSMS.jad"/>
+        </exec>
+        <echo message="🚀 Starting emulator..."/>
+    </target>
+
+    <target name="size-report">
+        <length file="ElimuSMS.jar" property="final.size"/>
+        <echo message="📊 FINAL JAR SIZE: ${final.size} bytes"/>
+        <condition property="size.ok">
+            <lessthan arg1="${final.size}" arg2="50000"/>
+        </condition>
+        <condition property="size.great">
+            <lessthan arg1="${final.size}" arg2="45000"/>
+        </condition>
+        <echo if:set="size.great" message="🎉 EXCELLENT! Under 45KB target"/>
+        <echo if:set="size.ok" message="✅ GOOD! Under 50KB"/>
+        <echo unless:set="size.ok" message="⚠️  WARNING: Over 50KB - check compression"/>
+    </target>
+
+</project>
