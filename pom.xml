@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.elimu</groupId>
+    <artifactId>download-deps</artifactId>
+    <version>1.0</version>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.microemu</groupId>
+            <artifactId>microemulator</artifactId>
+            <version>2.0.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.microemu</groupId>
+            <artifactId>midpapi20</artifactId>
+            <version>2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.microemu</groupId>
+            <artifactId>cldcapi11</artifactId>
+            <version>1.1</version>
+        </dependency>
+    </dependencies>
+</project>

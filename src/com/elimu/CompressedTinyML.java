@@ -1,8 +1,8 @@
 package com.elimu;
 
 import java.io.*;
-import javax.microedition.io.Connector;
-import javax.microedition.io.file.FileConnection;
+//import javax.microedition.io.Connector;
+//import javax.microedition.io.file.FileConnection;
 
 public class CompressedTinyML {
     // TIER 1 OPTIMIZATION: 4-bit quantization + 70% pruning

@@ -1,93 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project name="ElimuSMS-Tier1" default="build" basedir=".">
+<project name="ElimuSMS" default="build" basedir=".">
 
-    <property environment="env"/>
-    <property name="wtk.home" value="${env.WTK_HOME}"/>
-    <property name="midp.lib" value="${wtk.home}/lib/midpapi20.jar"/>
-    <property name="cldc.lib" value="${wtk.home}/lib/cldcapi11.jar"/>
+    <property name="src.dir" value="src"/>
+    <property name="build.dir" value="build"/>
+    <property name="classes.dir" value="${build.dir}/classes"/>
+    <property name="dist.dir" value="${build.dir}/dist"/>
 
-    <target name="init">
-        <echo message="Java ME SDK: ${wtk.home}"/>
-        <available file="${wtk.home}/bin/emulator" property="emulator.exists"/>
-        <fail unless="emulator.exists" message="Java ME SDK not found at ${wtk.home}"/>
-    </target>
-
-    <target name="build" depends="init">
-        <mkdir dir="build/classes"/>
-        <mkdir dir="build/resources"/>
-
-        <!-- Copy resources -->
-        <copy todir="build/resources">
-            <fileset dir="resources"/>
-        </copy>
-
-        <!-- Compile -->
-        <javac srcdir="src"
-               destdir="build/classes"
-               bootclasspath="${midp.lib}"
-               source="1.3"
-               target="1.1"
-               debug="false"
-               includeAntRuntime="false">
-            <classpath>
-                <pathelement path="${midp.lib}"/>
-                <pathelement path="${cldc.lib}"/>
-            </classpath>
-        </javac>
-
-        <!-- Create JAR -->
-        <jar jarfile="ElimuSMS.jar"
-             basedir="build/classes"
-             includes="**/*.class">
-            <fileset dir="build/resources"/>
-        </jar>
-
-        <!-- Get JAR size -->
-        <length file="ElimuSMS.jar" property="jar.size"/>
-
-        <!-- Create JAD -->
-        <echo file="ElimuSMS.jad">MIDlet-Name: ElimuSMS
-            MIDlet-Version: 1.0.0
-            MIDlet-Vendor: ElimuTech
-            MIDlet-Description: AI-Powered CBC Learning (Tier1 Optimized)
-            MIDlet-1: ElimuSMS,,com.elimu.ElimuSMSMidlet
-            MicroEdition-Configuration: CLDC-1.1
-            MicroEdition-Profile: MIDP-2.0
-            MIDlet-Jar-URL: ElimuSMS.jar
-            MIDlet-Jar-Size: ${jar.size}
-        </echo>
-
-        <echo message="✅ BUILD SUCCESS: JAR size = ${jar.size} bytes"/>
-        <echo message="📱 Expected: ~45KB (Tier1 Optimized)"/>
-    </target>
+    <!-- Just use classpath, not bootclasspath -->
+    <property name="j2me.lib" value="lib/microemulator-2.0.4.jar"/>
 
     <target name="clean">
-        <delete dir="build"/>
-        <delete file="ElimuSMS.jar"/>
-        <delete file="ElimuSMS.jad"/>
-        <echo message="🧹 Clean completed"/>
+        <delete dir="${build.dir}"/>
+        <echo>Cleaned previous builds</echo>
     </target>
 
-    <target name="run" depends="build">
-        <exec executable="${wtk.home}/bin/emulator" spawn="true">
-            <arg value="-Xdevice:DefaultCldcPhone1"/>
-            <arg value="-Xdescriptor:ElimuSMS.jad"/>
-        </exec>
-        <echo message="🚀 Starting emulator..."/>
+    <target name="init">
+        <mkdir dir="${classes.dir}"/>
+        <mkdir dir="${dist.dir}"/>
     </target>
 
-    <target name="size-report">
-        <length file="ElimuSMS.jar" property="final.size"/>
-        <echo message="📊 FINAL JAR SIZE: ${final.size} bytes"/>
-        <condition property="size.ok">
-            <lessthan arg1="${final.size}" arg2="50000"/>
-        </condition>
-        <condition property="size.great">
-            <lessthan arg1="${final.size}" arg2="45000"/>
-        </condition>
-        <echo if:set="size.great" message="🎉 EXCELLENT! Under 45KB target"/>
-        <echo if:set="size.ok" message="✅ GOOD! Under 50KB"/>
-        <echo unless:set="size.ok" message="⚠️  WARNING: Over 50KB - check compression"/>
+    <target name="compile" depends="init">
+        <javac srcdir="${src.dir}"
+               destdir="${classes.dir}"
+               classpath="${j2me.lib}"
+               debug="false"
+               includeAntRuntime="false"
+               failonerror="true">
+            <compilerarg value="-Xlint:none"/>
+        </javac>
+        <echo>Compilation successful</echo>
     </target>
 
+    <target name="build" depends="compile">
+        <jar jarfile="${dist.dir}/ElimuSMS.jar"
+             basedir="${classes.dir}">
+            <manifest>
+                <attribute name="MIDlet-Name" value="ElimuSMS"/>
+                <attribute name="MIDlet-Version" value="1.0.0"/>
+                <attribute name="MIDlet-Vendor" value="Elimu"/>
+                <attribute name="MIDlet-1" value="ElimuSMS, , com.elimu.ElimuSMSMidlet"/>
+                <attribute name="MicroEdition-Configuration" value="CLDC-1.1"/>
+                <attribute name="MicroEdition-Profile" value="MIDP-2.0"/>
+            </manifest>
+        </jar>
+
+        <length file="${dist.dir}/ElimuSMS.jar" property="jar.size"/>
+        <echo file="${dist.dir}/ElimuSMS.jad">MIDlet-Name: ElimuSMS
+            MIDlet-Version: 1.0.0
+            MIDlet-Vendor: Elimu
+            MIDlet-1: ElimuSMS, , com.elimu.ElimuSMSMidlet
+            MIDlet-Jar-URL: ElimuSMS.jar
+            MIDlet-Jar-Size: ${jar.size}
+            MicroEdition-Configuration: CLDC-1.1
+            MicroEdition-Profile: MIDP-2.0
+        </echo>
+
+        <echo>✅ Build completed!</echo>
+    </target>
 </project>
