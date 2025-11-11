@@ -32,7 +32,11 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             responses = new MicroResponses();
             aiModel.loadModel();
         } catch (Exception e) {
-            showError("AI init failed: " + e.getMessage());
+            // Use StringBuffer for CLDC 1.1 compatibility
+            StringBuffer sb = new StringBuffer();
+            sb.append("AI init failed: ");
+            sb.append(e.getMessage());
+            showError(sb.toString());
         }
     }
 
@@ -104,11 +108,14 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
                 String response = responses.getResponse(intentId);
                 showResponse(response, "ElimuSMS");
             } else {
-                // Would send to cloud in real version
                 showResponse("Complex question - would use cloud AI", "AI Thinking");
             }
         } catch (Exception e) {
-            showError("Error: " + e.getMessage());
+            // Use StringBuffer for compatibility
+            StringBuffer sb = new StringBuffer();
+            sb.append("Error: ");
+            sb.append(e.getMessage());
+            showError(sb.toString());
         }
     }
 
@@ -124,10 +131,17 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         int local = UserPreferences.getLocalAnswers();
         int savings = local; // 1 KES per local answer
 
-        String progress = "Questions: " + total +
-                "\nLocal Answers: " + local +
-                "\nSavings: " + savings + " KES";
-        showResponse(progress, "My Progress");
+        // Use StringBuffer for progress message
+        StringBuffer sb = new StringBuffer();
+        sb.append("Questions: ");
+        sb.append(total);
+        sb.append("\nLocal Answers: ");
+        sb.append(local);
+        sb.append("\nSavings: ");
+        sb.append(savings);
+        sb.append(" KES");
+
+        showResponse(sb.toString(), "My Progress");
     }
 
     private void showError(String message) {

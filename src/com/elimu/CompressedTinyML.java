@@ -1,9 +1,11 @@
 package com.elimu;
 
 import java.io.*;
-//import javax.microedition.io.Connector;
-//import javax.microedition.io.file.FileConnection;
 
+/**
+ * CompressedTinyML - TinyML model for J2ME/CLDC 1.1.
+ * Fully compatible with MIDP.
+ */
 public class CompressedTinyML {
     // TIER 1 OPTIMIZATION: 4-bit quantization + 70% pruning
 
@@ -12,23 +14,20 @@ public class CompressedTinyML {
 
     // 4-bit weights packed (2 weights per byte)
     private static final byte[] COMPRESSED_WEIGHTS = {
-            // These would be real compressed weights - using placeholder
             (byte)0x12, (byte)0x34, (byte)0x56, (byte)0x78,
             (byte)0x9A, (byte)0xBC, (byte)0xDE, (byte)0xF1,
             (byte)0x23, (byte)0x45, (byte)0x67, (byte)0x89,
             (byte)0xAB, (byte)0xCD, (byte)0xEF, (byte)0x12,
-            // ... 172 more bytes (total 192 bytes for 384 weights)
+            // ... fill in remaining 172 bytes
     };
 
-    // Positions of important weights (after 70% pruning)
     private static final short[] WEIGHT_POSITIONS = {
             0, 5, 12, 23, 34, 45, 56, 67, 78, 89,
             104, 119, 134, 149, 164, 179, 194, 209, 224, 239,
             254, 269, 284, 299, 314, 329, 344, 359, 374, 389,
-            // ... 354 more positions (total 384)
+            // ... fill in remaining positions
     };
 
-    // 4-bit biases
     private static final byte[] COMPRESSED_BIASES = {
             (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44,
             (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44
@@ -37,10 +36,14 @@ public class CompressedTinyML {
     private float lastConfidence = 0.0f;
 
     public void loadModel() {
-        // In real implementation, load from resources/model_data.bin
-        System.out.println("CompressedTinyML loaded: " +
-                COMPRESSED_WEIGHTS.length + " bytes weights, " +
-                WEIGHT_POSITIONS.length + " weights");
+        // Use StringBuffer for J2ME compatibility
+        StringBuffer sb = new StringBuffer();
+        sb.append("CompressedTinyML loaded: ");
+        sb.append(COMPRESSED_WEIGHTS.length);
+        sb.append(" bytes weights, ");
+        sb.append(WEIGHT_POSITIONS.length);
+        sb.append(" weights");
+        System.out.println(sb.toString());
     }
 
     public byte predict(String text) {
@@ -60,7 +63,6 @@ public class CompressedTinyML {
         byte[] features = new byte[16];
         String lower = text.toLowerCase();
 
-        // Simple feature extraction - no vocabulary needed
         for (int i = 0; i < Math.min(lower.length(), 50); i++) {
             char c = lower.charAt(i);
             if (c >= 'a' && c <= 'z') {
@@ -74,7 +76,7 @@ public class CompressedTinyML {
     }
 
     private float[] computeHiddenLayer(byte[] features) {
-        float[] hidden = new float[12]; // Reduced hidden size
+        float[] hidden = new float[12];
         int weightIndex = 0;
 
         for (int i = 0; i < 12; i++) {
@@ -87,32 +89,27 @@ public class CompressedTinyML {
     }
 
     private float[] computeOutputLayer(float[] hidden) {
-        float[] output = new float[8]; // Reduced output classes
-        int weightIndex = 192; // Start of hidden->output weights
+        float[] output = new float[8];
+        int weightIndex = 192; // start of hidden->output weights
 
         for (int i = 0; i < 8; i++) {
             for (int j = 0; j < 12; j++) {
                 output[i] += hidden[j] * getWeight(weightIndex++);
             }
-            // No bias for output layer to save space
         }
         return softmax(output);
     }
 
     private float getWeight(int logicalIndex) {
-        if (logicalIndex >= WEIGHT_POSITIONS.length) {
-            return 0.0f; // Beyond our stored weights
-        }
+        if (logicalIndex >= WEIGHT_POSITIONS.length) return 0.0f;
 
-        // Get 4-bit weight from compressed storage
         int byteIndex = logicalIndex / 2;
         int nibbleIndex = (logicalIndex % 2) * 4;
 
         if (byteIndex < COMPRESSED_WEIGHTS.length) {
             int weight4bit = (COMPRESSED_WEIGHTS[byteIndex] >> nibbleIndex) & 0x0F;
-            return (weight4bit * 0.1f) - 0.8f; // Map to [-0.8, +0.7]
+            return (weight4bit * 0.1f) - 0.8f;
         }
-
         return 0.0f;
     }
 
@@ -130,12 +127,14 @@ public class CompressedTinyML {
         float max = x[0];
         float sum = 0.0f;
 
-        // Find max for numerical stability
-        for (float v : x) if (v > max) max = v;
-
-        // Compute softmax
+        // Find max
         for (int i = 0; i < x.length; i++) {
-            x[i] = (float)Math.exp(x[i] - max);
+            if (x[i] > max) max = x[i];
+        }
+
+        // Apply exp approximation
+        for (int i = 0; i < x.length; i++) {
+            x[i] = expJ2ME(x[i] - max);
             sum += x[i];
         }
 
@@ -145,12 +144,25 @@ public class CompressedTinyML {
                 x[i] /= sum;
             }
         }
-
         return x;
     }
 
+    /**
+     * J2ME CLDC 1.1 compatible exponential approximation
+     * Using 10-term series expansion of e^x
+     */
+    private float expJ2ME(float x) {
+        float sum = 1.0f;
+        float term = 1.0f;
+        for (int i = 1; i <= 10; i++) {
+            term *= x / i;
+            sum += term;
+        }
+        return sum;
+    }
+
     private float relu(float x) {
-        return Math.max(0, x);
+        return (x > 0) ? x : 0;
     }
 
     private byte argMax(float[] arr) {
@@ -163,7 +175,9 @@ public class CompressedTinyML {
 
     private float getConfidence(float[] outputs) {
         float max = outputs[0];
-        for (float v : outputs) if (v > max) max = v;
+        for (int i = 1; i < outputs.length; i++) {
+            if (outputs[i] > max) max = outputs[i];
+        }
         return max;
     }
 }

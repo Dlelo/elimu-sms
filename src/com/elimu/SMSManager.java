@@ -2,8 +2,12 @@ package com.elimu;
 
 public class SMSManager {
     public static void sendToCloudAI(String question) {
-        // Placeholder - in real version would send SMS
-        System.out.println("WOULD SEND SMS: " + question);
+        // Use StringBuffer for J2ME compatibility
+        StringBuffer sb = new StringBuffer();
+        sb.append("WOULD SEND SMS: ");
+        sb.append(question);
+        System.out.println(sb.toString());
+
         UserPreferences.incrementCloudAnswers();
     }
 }

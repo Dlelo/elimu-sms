@@ -23,7 +23,9 @@
 
 brew install --cask zulu8
 
+## How to run
+sdk use java 17.0.17-zulu
 ant clean build
-java -jar lib/microemulator-2.0.4.jar build/dist/ElimuSMS.jad
 java -jar lib/microemulator-2.0.4.jar build/dist/ElimuSMS.jar
+
 

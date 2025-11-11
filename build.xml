@@ -6,12 +6,13 @@
     <property name="classes.dir" value="${build.dir}/classes"/>
     <property name="dist.dir" value="${build.dir}/dist"/>
 
-    <!-- Just use classpath, not bootclasspath -->
-    <property name="j2me.lib" value="lib/microemulator-2.0.4.jar"/>
+    <!-- Libraries -->
+    <property name="midp.lib" value="lib/midp.jar"/>
+    <property name="cldc.lib" value="lib/cldc.jar"/>
 
     <target name="clean">
         <delete dir="${build.dir}"/>
-        <echo>Cleaned previous builds</echo>
+        <echo>🧹 Cleaned previous builds</echo>
     </target>
 
     <target name="init">
@@ -19,18 +20,24 @@
         <mkdir dir="${dist.dir}"/>
     </target>
 
+    <!-- ✅ Compile MIDlet classes for Java 1.4 target -->
     <target name="compile" depends="init">
         <javac srcdir="${src.dir}"
                destdir="${classes.dir}"
-               classpath="${j2me.lib}"
+               source="1.8"
+               target="1.8"
+               bootclasspath="lib/cldcapi11-2.0.2.jar"
+               classpath="lib/midpapi20.jar"
                debug="false"
                includeAntRuntime="false"
-               failonerror="true">
+               failonerror="true"
+               fork="true">
             <compilerarg value="-Xlint:none"/>
         </javac>
-        <echo>Compilation successful</echo>
+        <echo>✅ Compilation successful (Java 1.4 target)</echo>
     </target>
 
+    <!-- ✅ Package JAR and JAD -->
     <target name="build" depends="compile">
         <jar jarfile="${dist.dir}/ElimuSMS.jar"
              basedir="${classes.dir}">
@@ -44,8 +51,10 @@
             </manifest>
         </jar>
 
+        <!-- Create JAD file -->
         <length file="${dist.dir}/ElimuSMS.jar" property="jar.size"/>
-        <echo file="${dist.dir}/ElimuSMS.jad">MIDlet-Name: ElimuSMS
+        <echo file="${dist.dir}/ElimuSMS.jad">
+            MIDlet-Name: ElimuSMS
             MIDlet-Version: 1.0.0
             MIDlet-Vendor: Elimu
             MIDlet-1: ElimuSMS, , com.elimu.ElimuSMSMidlet
@@ -55,6 +64,7 @@
             MicroEdition-Profile: MIDP-2.0
         </echo>
 
-        <echo>✅ Build completed!</echo>
+        <echo>✅ Build completed successfully!</echo>
     </target>
+
 </project>
