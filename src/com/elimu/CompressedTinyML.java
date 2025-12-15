@@ -5,32 +5,71 @@ import java.io.*;
 /**
  * CompressedTinyML - TinyML model for J2ME/CLDC 1.1.
  * Fully compatible with MIDP.
+ * WITH TRAINED WEIGHTS FROM PYTHON
  */
 public class CompressedTinyML {
-    // TIER 1 OPTIMIZATION: 4-bit quantization + 70% pruning
+    // TIER 1 OPTIMIZATION: 4-bit quantization + pruning
 
     private static final int NUM_WEIGHTS = 384; // Reduced from 1968 (80% reduction)
     private static final int NUM_BIASES = 20;
 
-    // 4-bit weights packed (2 weights per byte)
+    // TRAINED WEIGHTS - Generated from Python training
     private static final byte[] COMPRESSED_WEIGHTS = {
-            (byte)0x12, (byte)0x34, (byte)0x56, (byte)0x78,
-            (byte)0x9A, (byte)0xBC, (byte)0xDE, (byte)0xF1,
-            (byte)0x23, (byte)0x45, (byte)0x67, (byte)0x89,
-            (byte)0xAB, (byte)0xCD, (byte)0xEF, (byte)0x12,
-            // ... fill in remaining 172 bytes
+            (byte)0xAD, (byte)0xCB, (byte)0x32, (byte)0x9E, (byte)0x6D, (byte)0x2D, (byte)0x73, (byte)0xBD,
+            (byte)0x4C, (byte)0x3A, (byte)0x50, (byte)0x12, (byte)0x6D, (byte)0x2C, (byte)0xD7, (byte)0x41,
+            (byte)0x6D, (byte)0xF5, (byte)0x99, (byte)0xCA, (byte)0x34, (byte)0xBE, (byte)0x5D, (byte)0x5B,
+            (byte)0x67, (byte)0xCB, (byte)0x8C, (byte)0x7C, (byte)0x47, (byte)0x75, (byte)0x4A, (byte)0x4B,
+            (byte)0xB7, (byte)0x56, (byte)0x4E, (byte)0xD4, (byte)0x58, (byte)0xA7, (byte)0x96, (byte)0x76,
+            (byte)0x97, (byte)0x76, (byte)0x57, (byte)0x98, (byte)0xA7, (byte)0x79, (byte)0x97, (byte)0x95,
+            (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77,
+            (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x57, (byte)0x45, (byte)0x88, (byte)0xEF,
+            (byte)0x4E, (byte)0x59, (byte)0x58, (byte)0xB9, (byte)0x89, (byte)0x6B, (byte)0x8A, (byte)0x97,
+            (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77,
+            (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x74, (byte)0xD5, (byte)0x4A, (byte)0xA6,
+            (byte)0xB8, (byte)0xE9, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77,
+            (byte)0xA7, (byte)0x78, (byte)0x24, (byte)0x99, (byte)0xB3, (byte)0xC4, (byte)0x58, (byte)0x9A,
+            (byte)0xBC, (byte)0x2A, (byte)0x26, (byte)0xA7, (byte)0xCE, (byte)0xD5, (byte)0x38, (byte)0x6A,
+            (byte)0x44, (byte)0xB4, (byte)0xAC, (byte)0xB9, (byte)0x2F, (byte)0x7A, (byte)0xA8, (byte)0x67,
+            (byte)0xC5, (byte)0x58, (byte)0xF7, (byte)0x63, (byte)0xCD, (byte)0x34, (byte)0xE8, (byte)0x67,
+            (byte)0x77, (byte)0x8D, (byte)0x8C, (byte)0x89, (byte)0xE2, (byte)0xD5, (byte)0xE1, (byte)0x10,
+            (byte)0x30, (byte)0xCD, (byte)0x18, (byte)0x34, (byte)0xD5, (byte)0x68, (byte)0x84, (byte)0x95
     };
 
     private static final short[] WEIGHT_POSITIONS = {
-            0, 5, 12, 23, 34, 45, 56, 67, 78, 89,
-            104, 119, 134, 149, 164, 179, 194, 209, 224, 239,
-            254, 269, 284, 299, 314, 329, 344, 359, 374, 389,
-            // ... fill in remaining positions
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+            10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+            20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+            30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+            40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+            50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+            60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+            70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+            80, 81, 82, 83, 84, 85, 86, 87, 88, 89,
+            90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+            100, 101, 102, 103, 104, 105, 106, 107, 108, 109,
+            110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
+            120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
+            130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
+            140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
+            150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
+            160, 161, 162, 163, 164, 165, 166, 167, 168, 169,
+            170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
+            180, 181, 182, 183, 184, 185, 186, 187, 188, 189,
+            190, 191, 192, 193, 194, 195, 196, 197, 198, 199,
+            200, 201, 202, 203, 204, 205, 206, 207, 208, 209,
+            210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
+            220, 221, 222, 223, 224, 225, 226, 227, 228, 229,
+            230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+            240, 241, 242, 243, 244, 245, 246, 247, 248, 249,
+            250, 251, 252, 253, 254, 255, 256, 257, 258, 259,
+            260, 261, 262, 263, 264, 265, 266, 267, 268, 269,
+            270, 271, 272, 273, 274, 275, 276, 277, 278, 279,
+            280, 281, 282, 283, 284, 285, 286, 287
     };
 
     private static final byte[] COMPRESSED_BIASES = {
-            (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44,
-            (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44, (byte)0x44
+            (byte)0xFB, (byte)0x98, (byte)0x6C, (byte)0x14, (byte)0x10, (byte)0x69, (byte)0x0F, (byte)0xDC,
+            (byte)0x8F, (byte)0xA6
     };
 
     private float lastConfidence = 0.0f;
@@ -59,20 +98,59 @@ public class CompressedTinyML {
         return lastConfidence;
     }
 
+    // Debug method for testing
+    public void debugPrediction(String text) {
+        byte[] features = extractFeatures(text);
+        byte intent = predict(text);
+        float confidence = getLastConfidence();
+
+        // Use StringBuffer instead of string concatenation for J2ME
+        StringBuffer debug = new StringBuffer();
+        debug.append("DEBUG - Text: ");
+        debug.append(text);
+        debug.append(", Intent: ");
+        debug.append(intent);
+        debug.append(", Confidence: ");
+        debug.append(confidence);
+        System.out.println(debug.toString());
+    }
+
     private byte[] extractFeatures(String text) {
         byte[] features = new byte[16];
         String lower = text.toLowerCase();
 
-        for (int i = 0; i < Math.min(lower.length(), 50); i++) {
-            char c = lower.charAt(i);
-            if (c >= 'a' && c <= 'z') {
-                int idx = (c - 'a') % 16;
-                if (features[idx] < 10) {
-                    features[idx]++;
-                }
+        // Feature 0-5: Subject keywords
+        String[] subjects = {"math", "science", "english", "calculate", "experiment", "grammar",
+                "plants", "animals", "weather", "sunlight", "growth"};
+        for (int i = 0; i < subjects.length; i++) {
+            if (contains(lower, subjects[i])) {
+                features[i] = 1;
             }
         }
+
+        // Feature 6-9: Question type
+        if (contains(lower, "what") || contains(lower, "which")) features[6] = 1;
+        if (contains(lower, "how")) features[7] = 1;
+        if (contains(lower, "why")) features[8] = 1;
+        if (contains(lower, "when") || contains(lower, "where")) features[9] = 1;
+
+        // Feature 10-15: Educational context
+        if (contains(lower, "help")) features[10] = 1;
+        if (contains(lower, "learn")) features[11] = 1;
+        if (contains(lower, "teach")) features[12] = 1;
+        if (contains(lower, "explain")) features[13] = 1;
+        if (contains(lower, "question")) features[14] = 1;
+        if (contains(lower, "answer")) features[15] = 1;
+
         return features;
+    }
+
+    /**
+     * J2ME compatible string contains method
+     * CLDC 1.1 doesn't have String.contains()
+     */
+    private boolean contains(String str, String substring) {
+        return str.indexOf(substring) != -1;
     }
 
     private float[] computeHiddenLayer(byte[] features) {

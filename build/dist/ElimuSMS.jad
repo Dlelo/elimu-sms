@@ -4,7 +4,7 @@
             MIDlet-Vendor: Elimu
             MIDlet-1: ElimuSMS, , com.elimu.ElimuSMSMidlet
             MIDlet-Jar-URL: ElimuSMS.jar
-            MIDlet-Jar-Size: 8058
+            MIDlet-Jar-Size: 11804
             MicroEdition-Configuration: CLDC-1.1
             MicroEdition-Profile: MIDP-2.0
         
