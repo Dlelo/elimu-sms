@@ -31,7 +31,11 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             aiModel = new CompressedTinyML();
             responses = new MicroResponses();
             aiModel.loadModel();
-            System.out.println("AI initialized successfully"); // Debug
+
+            // Test the enhanced model
+            System.out.println("=== Testing Enhanced AI Model ===");
+            aiModel.testModel(); // This will run all test cases
+
         } catch (Exception e) {
             StringBuffer sb = new StringBuffer();
             sb.append("AI init failed: ");
@@ -100,12 +104,20 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
 
     private void processQuery(String question) {
         try {
-            // Debug output compatible with J2ME
+            // Debug output
             StringBuffer debug = new StringBuffer();
             debug.append("Question: ");
             debug.append(question);
             System.out.println(debug.toString());
 
+            // TEMPORARY FIX: Check for plants first
+            String lower = question.toLowerCase();
+            if (contains(lower, "plant") || contains(lower, "plants")) {
+                handleScienceQuestion(question);
+                return;
+            }
+
+            // Then try the AI model
             byte intentId = aiModel.predict(question);
             float confidence = aiModel.getLastConfidence();
 
@@ -116,12 +128,14 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             debug.append(confidence);
             System.out.println(debug.toString());
 
-            if (confidence > 0.3f) {
+            if (confidence > 0.5f) { // Increased threshold
                 switch (intentId) {
                     case 0: handleMathQuestion(question); break;
                     case 1: handleScienceQuestion(question); break;
                     case 2: handleEnglishQuestion(question); break;
                     case 3: showResponse("I can give you practice questions on math, science or English!", "Quiz"); break;
+                    case 6: showResponse("Hello! How can I help you learn today?", "Greeting"); break;
+                    case 7: showResponse("Goodbye! Come back anytime for more learning!", "Farewell"); break;
                     default: handleLowConfidence(question); break;
                 }
             } else {
@@ -132,8 +146,6 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             showError("Oops! Something went wrong. Try a different question.");
         }
     }
-
-
     // ---------------- Math ----------------
     private void handleMathQuestion(String question) {
         if (question.indexOf('+') >= 0 || question.indexOf('-') >= 0
