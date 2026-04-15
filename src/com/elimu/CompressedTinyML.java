@@ -1,21 +1,27 @@
 package com.elimu;
 
 import java.io.*;
+import javax.microedition.rms.*;
 
 /**
  * CompressedTinyML - TinyML model for J2ME/CLDC 1.1.
- * Fully compatible with MIDP.
- * Trained on Kenya CBC Grade 6 Living Things science data (LIVING.pdf)
- * Accuracy: 83.78% test / 80.73% train
+ * Fully compatible with MIDP 2.0.
+ * Trained on Kenya CBC Grade 6 Living Things science data.
+ * Accuracy: 83.78% test / 80.73% train.
+ *
+ * Supports on-device online learning:
+ *   call learn(correctIntent, lr) immediately after predict() to do one
+ *   SGD backprop step, then saveWeights() to persist to RecordStore.
  */
 public class CompressedTinyML {
-    // Model architecture
-    private static final int FEATURE_SIZE = 25;
-    private static final int HIDDEN_SIZE = 12;
-    private static final int OUTPUT_SIZE = 8;
 
-    // TRAINED WEIGHTS - Generated from LIVING.pdf grade 6 science data
-    // W1 (12x25) + W2 (8x12) = 300+96 = 396 values = 198 bytes
+    // ── Architecture ──────────────────────────────────────────────────────────
+    private static final int FEATURE_SIZE = 25;
+    private static final int HIDDEN_SIZE  = 12;
+    private static final int OUTPUT_SIZE  = 8;
+
+    // ── Factory-default compressed weights (4-bit nibble packed) ─────────────
+    // W1 (12×25) + W2 (8×12) = 396 nibbles = 198 bytes
     private static final byte[] COMPRESSED_WEIGHTS = {
             (byte)0xB8, (byte)0x7B, (byte)0xA8, (byte)0xAA, (byte)0x9B, (byte)0xA9, (byte)0x98, (byte)0x78,
             (byte)0x88, (byte)0x77, (byte)0x99, (byte)0x8A, (byte)0x67, (byte)0xA6, (byte)0x87, (byte)0x7A,
@@ -44,29 +50,55 @@ public class CompressedTinyML {
             (byte)0x56, (byte)0x66, (byte)0x9A, (byte)0x29, (byte)0x7B, (byte)0x29
     };
 
-    // Biases: 12 hidden + 8 output = 20 values = 10 bytes
+    // 12 hidden + 8 output = 20 biases = 10 bytes
     private static final byte[] COMPRESSED_BIASES = {
             (byte)0xBA, (byte)0xEE, (byte)0xEF, (byte)0xBE, (byte)0xAC, (byte)0xCA, (byte)0x49, (byte)0xB8,
             (byte)0x8B, (byte)0xA7
     };
 
+    // ── Mutable weight arrays (live during inference; updated by learning) ────
+    private float[] w1 = new float[HIDDEN_SIZE * FEATURE_SIZE]; // 12×25 row-major
+    private float[] w2 = new float[OUTPUT_SIZE  * HIDDEN_SIZE]; //  8×12 row-major
+    private float[] b1 = new float[HIDDEN_SIZE];
+    private float[] b2 = new float[OUTPUT_SIZE];
+
+    // ── Anchor weights for catastrophic-forgetting prevention ────────────────
+    // Each correction is penalised if it drifts too far from the last stable point.
+    private float[] anchorW1 = new float[HIDDEN_SIZE * FEATURE_SIZE];
+    private float[] anchorW2 = new float[OUTPUT_SIZE  * HIDDEN_SIZE];
+    private float[] anchorB1 = new float[HIDDEN_SIZE];
+    private float[] anchorB2 = new float[OUTPUT_SIZE];
+    private static final float LAMBDA = 0.01f; // regularisation strength
+
+    // ── Forward-pass cache (needed for backprop) ──────────────────────────────
+    private byte[]  lastFeatures = new byte[FEATURE_SIZE];
+    private float[] lastZ1       = new float[HIDDEN_SIZE]; // pre-ReLU hidden
+    private float[] lastA1       = new float[HIDDEN_SIZE]; // post-ReLU hidden
+    private float[] lastOutput   = new float[OUTPUT_SIZE]; // softmax probs
+
     private float lastConfidence = 0.0f;
 
+    private static final String RMS_STORE = "ElimuWeights";
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
     public void loadModel() {
-        StringBuffer sb = new StringBuffer();
-        sb.append("CompressedTinyML loaded: ");
+        decompressWeights();   // populate float arrays from static byte defaults
+        loadSavedWeights();    // overlay with persisted weights if any exist
+
+        StringBuffer sb = new StringBuffer("CompressedTinyML loaded: ");
         sb.append(COMPRESSED_WEIGHTS.length);
         sb.append(" bytes weights, ");
         sb.append(FEATURE_SIZE);
-        sb.append(" features (Living Things model)");
+        sb.append(" features (Living Things model + online learning)");
         System.out.println(sb.toString());
     }
 
+    // ── Inference ─────────────────────────────────────────────────────────────
     public byte predict(String text) {
         byte[] features = extractFeatures(text);
-        float[] hidden = computeHiddenLayer(features);
-        float[] output = computeOutputLayer(hidden);
-
+        System.arraycopy(features, 0, lastFeatures, 0, FEATURE_SIZE);
+        computeHiddenLayer(features);          // fills lastZ1, lastA1
+        float[] output = computeOutputLayer(); // reads lastA1, fills lastOutput
         lastConfidence = getConfidence(output);
         return argMax(output);
     }
@@ -75,256 +107,241 @@ public class CompressedTinyML {
         return lastConfidence;
     }
 
-    // Enhanced debug method
-    public void debugPrediction(String text) {
-        byte[] features = extractFeatures(text);
-
-        // Print features
-        StringBuffer featureStr = new StringBuffer("Features: ");
-        for (int i = 0; i < features.length; i++) {
-            if (features[i] == 1) {
-                featureStr.append(getFeatureName(i));
-                featureStr.append(" ");
-            }
-        }
-        System.out.println(featureStr.toString());
-
-        byte intent = predict(text);
-        float confidence = getLastConfidence();
-
-        StringBuffer debug = new StringBuffer();
-        debug.append("DEBUG - Text: '");
-        debug.append(text);
-        debug.append("' -> Intent: ");
-        debug.append(intent);
-        debug.append(" (");
-        debug.append(getIntentName(intent));
-        debug.append("), Confidence: ");
-        debug.append(confidence);
-        System.out.println(debug.toString());
-    }
-
-    private String getFeatureName(int index) {
-        String[] names = {
-            "math","science","english","calculat","experiment","grammar",
-            "plant","animal","living","photosynthes","habitat","food",
-            "water","grow","what/which","how","why","when/where",
-            "help","learn","teach","explain","question","answer","social"
-        };
-        if (index >= 0 && index < names.length) return names[index];
-        StringBuffer sb = new StringBuffer("f");
-        sb.append(index);
-        return sb.toString();
-    }
-
-
-    private String getIntentName(byte intentId) {
-        switch(intentId) {
-            case 0: return "math_help";
-            case 1: return "science_help";
-            case 2: return "english_help";
-            case 3: return "quiz";
-            case 4: return "general_help";
-            case 5: return "progress";
-            case 6: return "greeting";
-            case 7: return "farewell";
-            default: return "unknown";
-        }
-    }
-
-    // FEATURE EXTRACTION (25 features) - trained on Kenya CBC Grade 6 Living Things
-    private byte[] extractFeatures(String text) {
-        byte[] features = new byte[25];
-        String lower = text.toLowerCase();
-
-        // Feature 0-8: Subject keywords
-        String[] subjectKeywords = {
-            "math", "science", "english", "calculat", "experiment",
-            "grammar", "plant", "animal", "living"
-        };
-        for (int i = 0; i < subjectKeywords.length; i++) {
-            if (contains(lower, subjectKeywords[i])) features[i] = 1;
-        }
-
-        // Extra aliases: fire feature[7]=animal or feature[1]=science for biology terms
-        // not covered by the subject keyword list
-        if (contains(lower, "insect")     || contains(lower, "vertebr")  ||
-            contains(lower, "invertebr")  || contains(lower, "pollinat") ||
-            contains(lower, "bee")        || contains(lower, "worm")     ||
-            contains(lower, "bird")       || contains(lower, "fish")     ||
-            contains(lower, "mammal")     || contains(lower, "reptile")  ||
-            contains(lower, "amphibian")) {
-            features[7] = 1; // animal
-            features[1] = 1; // science
-        }
-        if (contains(lower, "chlorophyll") || contains(lower, "stomata") ||
-            contains(lower, "transpir")    || contains(lower, "leaf")    ||
-            contains(lower, "leaves")      || contains(lower, "root")    ||
-            contains(lower, "seed")        || contains(lower, "flower")  ||
-            contains(lower, "stem")) {
-            features[6] = 1; // plant
-            features[1] = 1; // science
-        }
-        // Subject keywords plant/animal/living are all science — fire feature[1] too
-        if (features[6] == 1 || features[7] == 1 || features[8] == 1) {
-            features[1] = 1;
-        }
-        // Human body / health science terms
-        if (contains(lower, "heart")      || contains(lower, "blood")     ||
-            contains(lower, "circul")     || contains(lower, "artery")    ||
-            contains(lower, "arteries")   || contains(lower, "vein")      ||
-            contains(lower, "capillar")   || contains(lower, "pulse")     ||
-            contains(lower, "plasma")     || contains(lower, "haemoglob")) {
-            features[1] = 1; // science
-        }
-        // Reproductive system / adolescence terms
-        if (contains(lower, "reproduct")  || contains(lower, "adolescen") ||
-            contains(lower, "puberty")    || contains(lower, "ovary")     ||
-            contains(lower, "uterus")     || contains(lower, "testis")    ||
-            contains(lower, "sperm")      || contains(lower, "menstruat") ||
-            contains(lower, "ovulat")     || contains(lower, "fallopian")) {
-            features[1] = 1; // science
-        }
-        // Environment / water conservation terms
-        if (contains(lower, "conserv")    || contains(lower, "harvest")   ||
-            contains(lower, "recycle")    || contains(lower, "mulch")) {
-            features[1] = 1; // science
-        }
-
-        // Feature 9-13: Living things specific keywords
-        if (contains(lower, "photosynthes")) features[9] = 1;
-        if (contains(lower, "habitat"))      features[10] = 1;
-        if (contains(lower, "food"))         features[11] = 1;
-        if (contains(lower, "water"))        features[12] = 1;
-        if (contains(lower, "grow"))         features[13] = 1;
-
-        // Feature 14-17: Question types
-        if (contains(lower, "what") || contains(lower, "which")) features[14] = 1;
-        if (contains(lower, "how"))                              features[15] = 1;
-        if (contains(lower, "why"))                              features[16] = 1;
-        if (contains(lower, "when") || contains(lower, "where")) features[17] = 1;
-
-        // Feature 18-23: Educational context
-        String[] contextKeywords = {"help", "learn", "teach", "explain", "question", "answer"};
-        for (int i = 0; i < contextKeywords.length; i++) {
-            if (contains(lower, contextKeywords[i])) features[18 + i] = 1;
-        }
-
-        // Feature 24: Social/greeting/farewell cue
-        if (contains(lower, "hello") || contains(lower, "hi") ||
-            contains(lower, "bye")   || contains(lower, "good")) {
-            features[24] = 1;
-        }
-
-        return features;
-    }
-
+    // ── On-device online learning ─────────────────────────────────────────────
     /**
-     * J2ME compatible string contains method
-     * CLDC 1.1 doesn't have String.contains()
+     * One stochastic gradient-descent step using cached forward-pass state.
+     * Must be called immediately after predict() — uses lastFeatures, lastZ1,
+     * lastA1, lastOutput which were set during that predict() call.
+     *
+     * Gradient derivation (cross-entropy loss + softmax):
+     *   dL/dz2_k  = output_k - 1{k == correctIntent}   (clean closed form)
+     *   dL/dW2_ij = dL/dz2_i * a1_j
+     *   dL/db2_i  = dL/dz2_i
+     *   dL/da1_j  = sum_i( W2_ij * dL/dz2_i )
+     *   dL/dz1_i  = dL/da1_i * relu'(z1_i)             relu' = 1 if z1>0 else 0
+     *   dL/dW1_ij = dL/dz1_i * x_j
+     *   dL/db1_i  = dL/dz1_i
+     *
+     * @param correctIntent  true intent label 0-7
+     * @param lr             learning rate (0.05f recommended)
      */
-    private boolean contains(String str, String substring) {
-        return str.indexOf(substring) != -1;
-    }
-
-    private float[] computeHiddenLayer(byte[] features) {
-        float[] hidden = new float[HIDDEN_SIZE];
-        int weightIndex = 0;
-
-        for (int i = 0; i < HIDDEN_SIZE; i++) {
-            float sum = 0.0f;
-            for (int j = 0; j < FEATURE_SIZE; j++) {
-                sum += features[j] * getWeight(weightIndex++);
-            }
-            hidden[i] = relu(sum + getBias(i));
-        }
-        return hidden;
-    }
-
-    private float[] computeOutputLayer(float[] hidden) {
-        float[] output = new float[OUTPUT_SIZE];
-        int weightIndex = FEATURE_SIZE * HIDDEN_SIZE; // start of hidden->output weights
-
+    public void learn(int correctIntent, float lr) {
+        // ── Output-layer delta ────────────────────────────────────────────────
+        float[] delta2 = new float[OUTPUT_SIZE];
         for (int i = 0; i < OUTPUT_SIZE; i++) {
-            float sum = 0.0f;
+            delta2[i] = lastOutput[i] - (i == correctIntent ? 1.0f : 0.0f);
+        }
+
+        // ── Update W2 and b2 (gradient + L2 pull toward anchor) ─────────────
+        for (int i = 0; i < OUTPUT_SIZE; i++) {
+            b2[i] -= lr * (delta2[i] + LAMBDA * (b2[i] - anchorB2[i]));
             for (int j = 0; j < HIDDEN_SIZE; j++) {
-                sum += hidden[j] * getWeight(weightIndex++);
+                int idx = i * HIDDEN_SIZE + j;
+                w2[idx] -= lr * (delta2[i] * lastA1[j] + LAMBDA * (w2[idx] - anchorW2[idx]));
             }
-            output[i] = sum + getBias(HIDDEN_SIZE + i); // Add output bias
         }
 
-        // Apply softmax
-        return softmax(output);
+        // ── Hidden-layer delta (backprop through W2 then ReLU) ────────────────
+        float[] delta1 = new float[HIDDEN_SIZE];
+        for (int j = 0; j < HIDDEN_SIZE; j++) {
+            float sum = 0.0f;
+            for (int i = 0; i < OUTPUT_SIZE; i++) {
+                sum += w2[i * HIDDEN_SIZE + j] * delta2[i];
+            }
+            // ReLU derivative: pass gradient only where pre-activation was positive
+            delta1[j] = (lastZ1[j] > 0) ? sum : 0.0f;
+        }
+
+        // ── Update W1 and b1 (gradient + L2 pull toward anchor) ─────────────
+        for (int i = 0; i < HIDDEN_SIZE; i++) {
+            b1[i] -= lr * (delta1[i] + LAMBDA * (b1[i] - anchorB1[i]));
+            for (int j = 0; j < FEATURE_SIZE; j++) {
+                int idx = i * FEATURE_SIZE + j;
+                w1[idx] -= lr * (delta1[i] * lastFeatures[j] + LAMBDA * (w1[idx] - anchorW1[idx]));
+            }
+        }
     }
 
-    private float getWeight(int logicalIndex) {
-        int byteIndex = logicalIndex / 2;
-        int nibbleIndex = (logicalIndex % 2) * 4;
+    // ── Weight persistence (RecordStore) ──────────────────────────────────────
+    /**
+     * Serialise current weights to RMS so they survive app restarts.
+     * Total size: (300+96+12+8) floats × 4 bytes = 1664 bytes (< 8 KB minimum).
+     */
+    public void saveWeights() {
+        RecordStore rs = null;
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            DataOutputStream dos = new DataOutputStream(baos);
+            for (int i = 0; i < w1.length; i++) dos.writeFloat(w1[i]);
+            for (int i = 0; i < w2.length; i++) dos.writeFloat(w2[i]);
+            for (int i = 0; i < b1.length; i++) dos.writeFloat(b1[i]);
+            for (int i = 0; i < b2.length; i++) dos.writeFloat(b2[i]);
+            dos.flush();
+            byte[] data = baos.toByteArray();
 
-        if (byteIndex < COMPRESSED_WEIGHTS.length) {
-            int weight4bit = (COMPRESSED_WEIGHTS[byteIndex] >> nibbleIndex) & 0x0F;
-            // IMPORTANT: Convert 4-bit [0,15] to float [-1.0, 1.0]
-            // Formula: (weight4bit - 7.5f) / 7.5f
-            return (weight4bit - 7.5f) / 7.5f;
+            rs = RecordStore.openRecordStore(RMS_STORE, true);
+            if (rs.getNumRecords() == 0) {
+                rs.addRecord(data, 0, data.length);
+            } else {
+                rs.setRecord(1, data, 0, data.length);
+            }
+            copyToAnchor(); // advance anchor so the next correction protects this one
+            System.out.println("Weights saved to RMS.");
+        } catch (Exception e) {
+            StringBuffer se = new StringBuffer("saveWeights failed: ");
+            se.append(e.getMessage());
+            System.out.println(se.toString());
+        } finally {
+            if (rs != null) {
+                try { rs.closeRecordStore(); } catch (Exception ignore) {}
+            }
+        }
+    }
+
+    /** Overwrite current weights with the original factory defaults and clear RMS. */
+    public void resetWeights() {
+        decompressWeights();
+        RecordStore rs = null;
+        try {
+            rs = RecordStore.openRecordStore(RMS_STORE, false);
+            rs.deleteRecord(1);
+        } catch (Exception ignore) {
+        } finally {
+            if (rs != null) {
+                try { rs.closeRecordStore(); } catch (Exception ignore) {}
+            }
+        }
+        System.out.println("Weights reset to factory defaults.");
+    }
+
+    // ── Internal: decompress static bytes → float arrays ─────────────────────
+    private void decompressWeights() {
+        // W1: first 300 logical indices
+        for (int i = 0; i < HIDDEN_SIZE * FEATURE_SIZE; i++) {
+            w1[i] = getRawWeight(i);
+        }
+        // W2: next 96 logical indices
+        for (int i = 0; i < OUTPUT_SIZE * HIDDEN_SIZE; i++) {
+            w2[i] = getRawWeight(HIDDEN_SIZE * FEATURE_SIZE + i);
+        }
+        for (int i = 0; i < HIDDEN_SIZE; i++) b1[i] = getRawBias(i);
+        for (int i = 0; i < OUTPUT_SIZE; i++) b2[i] = getRawBias(HIDDEN_SIZE + i);
+        copyToAnchor(); // anchor starts at factory defaults
+    }
+
+    /** Snapshot current weights as the new stable baseline for L2 regularisation. */
+    private void copyToAnchor() {
+        System.arraycopy(w1, 0, anchorW1, 0, w1.length);
+        System.arraycopy(w2, 0, anchorW2, 0, w2.length);
+        System.arraycopy(b1, 0, anchorB1, 0, b1.length);
+        System.arraycopy(b2, 0, anchorB2, 0, b2.length);
+    }
+
+    /** Load persisted weights from RMS; silently keeps current weights if not found. */
+    private void loadSavedWeights() {
+        RecordStore rs = null;
+        try {
+            rs = RecordStore.openRecordStore(RMS_STORE, false);
+            if (rs.getNumRecords() > 0) {
+                byte[] data = rs.getRecord(1);
+                DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data));
+                for (int i = 0; i < w1.length; i++) w1[i] = dis.readFloat();
+                for (int i = 0; i < w2.length; i++) w2[i] = dis.readFloat();
+                for (int i = 0; i < b1.length; i++) b1[i] = dis.readFloat();
+                for (int i = 0; i < b2.length; i++) b2[i] = dis.readFloat();
+                copyToAnchor(); // anchor = what was persisted, so future corrections don't forget it
+                System.out.println("Loaded saved weights from RMS.");
+            }
+        } catch (RecordStoreNotFoundException e) {
+            System.out.println("No saved weights — using factory defaults.");
+        } catch (Exception e) {
+            StringBuffer le = new StringBuffer("loadSavedWeights error: ");
+            le.append(e.getMessage());
+            System.out.println(le.toString());
+        } finally {
+            if (rs != null) {
+                try { rs.closeRecordStore(); } catch (Exception ignore) {}
+            }
+        }
+    }
+
+    // ── Nibble decompression (maps 4-bit [0,15] → float [-1.0, 1.0]) ─────────
+    private float getRawWeight(int logicalIndex) {
+        int byteIdx   = logicalIndex / 2;
+        int nibbleShift = (logicalIndex % 2) * 4;
+        if (byteIdx < COMPRESSED_WEIGHTS.length) {
+            int w4 = (COMPRESSED_WEIGHTS[byteIdx] >> nibbleShift) & 0x0F;
+            return (w4 - 7.5f) / 7.5f;
         }
         return 0.0f;
     }
 
-    private float getBias(int index) {
-        if (index < 20) { // 12 hidden + 8 output biases
-            int byteIndex = index / 2;
-            int nibbleIndex = (index % 2) * 4;
-            int bias4bit = (COMPRESSED_BIASES[byteIndex] >> nibbleIndex) & 0x0F;
-            // Same scaling as weights
-            return (bias4bit - 7.5f) / 7.5f;
+    private float getRawBias(int index) {
+        if (index < 20) {
+            int byteIdx     = index / 2;
+            int nibbleShift = (index % 2) * 4;
+            int b4 = (COMPRESSED_BIASES[byteIdx] >> nibbleShift) & 0x0F;
+            return (b4 - 7.5f) / 7.5f;
         }
         return 0.0f;
     }
 
+    // ── Forward pass ──────────────────────────────────────────────────────────
+    /** Computes hidden layer; stores pre-ReLU in lastZ1, post-ReLU in lastA1. */
+    private void computeHiddenLayer(byte[] features) {
+        for (int i = 0; i < HIDDEN_SIZE; i++) {
+            float sum = b1[i];
+            for (int j = 0; j < FEATURE_SIZE; j++) {
+                sum += features[j] * w1[i * FEATURE_SIZE + j];
+            }
+            lastZ1[i] = sum;
+            lastA1[i] = relu(sum);
+        }
+    }
+
+    /** Computes output layer from lastA1; stores softmax probs in lastOutput. */
+    private float[] computeOutputLayer() {
+        float[] z2 = new float[OUTPUT_SIZE];
+        for (int i = 0; i < OUTPUT_SIZE; i++) {
+            float sum = b2[i];
+            for (int j = 0; j < HIDDEN_SIZE; j++) {
+                sum += lastA1[j] * w2[i * HIDDEN_SIZE + j];
+            }
+            z2[i] = sum;
+        }
+        float[] out = softmax(z2);
+        for (int i = 0; i < OUTPUT_SIZE; i++) lastOutput[i] = out[i];
+        return out;
+    }
+
+    // ── Math ──────────────────────────────────────────────────────────────────
     private float[] softmax(float[] x) {
-        float max = -Float.MAX_VALUE;
-        float sum = 0.0f;
-
-        // Find max for numerical stability
-        for (int i = 0; i < x.length; i++) {
+        float max = x[0];
+        for (int i = 1; i < x.length; i++) {
             if (x[i] > max) max = x[i];
         }
-
-        // Apply exp approximation
+        float[] out = new float[x.length];
+        float sum = 0.0f;
         for (int i = 0; i < x.length; i++) {
-            x[i] = expApprox(x[i] - max);
-            sum += x[i];
+            out[i] = expApprox(x[i] - max);
+            sum += out[i];
         }
-
-        // Normalize
         if (sum > 0.00001f) {
-            for (int i = 0; i < x.length; i++) {
-                x[i] /= sum;
-            }
+            for (int i = 0; i < out.length; i++) out[i] /= sum;
         }
-        return x;
+        return out;
     }
 
-    /**
-     * Fast exponential approximation for J2ME
-     */
+    /** Fast exp approximation via (1 + x/8)^8 — accurate enough for softmax routing. */
     private float expApprox(float x) {
-        // Fast exp approximation using limit (1 + x/n)^n
-        if (x > 5.0f) return 148.413f;  // e^5
-        if (x < -5.0f) return 0.0067f;  // e^-5
-
-        // Use (1 + x/8)^8 approximation for speed
-        float temp = 1.0f + x/8.0f;
-        float result = temp * temp;  // ^2
-        result = result * result;    // ^4
-        result = result * result;    // ^8
-
-        return result;
+        if (x >  5.0f) return 148.413f;
+        if (x < -5.0f) return 0.0067f;
+        float t = 1.0f + x / 8.0f;
+        t = t * t; t = t * t; t = t * t; // ^8
+        return t;
     }
 
-    private float relu(float x) {
-        return (x > 0) ? x : 0;
-    }
+    private float relu(float x) { return (x > 0) ? x : 0; }
 
     private byte argMax(float[] arr) {
         byte maxIdx = 0;
@@ -342,26 +359,178 @@ public class CompressedTinyML {
         return max;
     }
 
-    // Test method to verify model works
+    // ── Feature extraction (25 binary features) ───────────────────────────────
+    private byte[] extractFeatures(String text) {
+        byte[] features = new byte[25];
+        String lower = text.toLowerCase();
+
+        // Features 0-8: Subject keywords
+        String[] subjectKeywords = {
+            "math", "science", "english", "calculat", "experiment",
+            "grammar", "plant", "animal", "living"
+        };
+        for (int i = 0; i < subjectKeywords.length; i++) {
+            if (contains(lower, subjectKeywords[i])) features[i] = 1;
+        }
+
+        // Aliases: biology terms not in the primary keyword list
+        if (contains(lower, "insect")    || contains(lower, "vertebr")  ||
+            contains(lower, "invertebr") || contains(lower, "pollinat") ||
+            contains(lower, "bee")       || contains(lower, "worm")     ||
+            contains(lower, "bird")      || contains(lower, "fish")     ||
+            contains(lower, "mammal")    || contains(lower, "reptile")  ||
+            contains(lower, "amphibian")) {
+            features[7] = 1; features[1] = 1;
+        }
+        if (contains(lower, "chlorophyll") || contains(lower, "stomata") ||
+            contains(lower, "transpir")    || contains(lower, "leaf")    ||
+            contains(lower, "leaves")      || contains(lower, "root")    ||
+            contains(lower, "seed")        || contains(lower, "flower")  ||
+            contains(lower, "stem")) {
+            features[6] = 1; features[1] = 1;
+        }
+        if (features[6] == 1 || features[7] == 1 || features[8] == 1) features[1] = 1;
+
+        // Human body / health
+        if (contains(lower, "heart")    || contains(lower, "blood")    ||
+            contains(lower, "circul")   || contains(lower, "artery")   ||
+            contains(lower, "arteries") || contains(lower, "vein")     ||
+            contains(lower, "capillar") || contains(lower, "pulse")    ||
+            contains(lower, "plasma")   || contains(lower, "haemoglob")) {
+            features[1] = 1;
+        }
+        // Reproductive system / adolescence
+        if (contains(lower, "reproduct") || contains(lower, "adolescen") ||
+            contains(lower, "puberty")   || contains(lower, "ovary")    ||
+            contains(lower, "uterus")    || contains(lower, "testis")   ||
+            contains(lower, "sperm")     || contains(lower, "menstruat")||
+            contains(lower, "ovulat")    || contains(lower, "fallopian")) {
+            features[1] = 1;
+        }
+        // Water conservation
+        if (contains(lower, "conserv") || contains(lower, "harvest") ||
+            contains(lower, "recycle") || contains(lower, "mulch")) {
+            features[1] = 1;
+        }
+
+        // Digestive, respiratory, skeletal systems
+        if (contains(lower,"digest") || contains(lower,"stomach") || contains(lower,"intestin") ||
+            contains(lower,"liver")  || contains(lower,"bile")    || contains(lower,"saliva")   ||
+            contains(lower,"oesoph") || contains(lower,"enzyme")) features[1] = 1;
+
+        if (contains(lower,"lung")   || contains(lower,"respirat") || contains(lower,"breath")  ||
+            contains(lower,"trachea")|| contains(lower,"bronch")   || contains(lower,"diaphragm")) features[1] = 1;
+
+        if (contains(lower,"skeleton") || contains(lower,"bone") || contains(lower,"joint")   ||
+            contains(lower,"cartilage") || contains(lower,"muscle") || contains(lower,"skull")) features[1] = 1;
+
+        // Physics and environment
+        if (contains(lower,"lever")  || contains(lower,"pulley") || contains(lower,"machine")  ||
+            contains(lower,"fulcrum") || contains(lower,"effort") || contains(lower,"inclined")) features[1] = 1;
+
+        if (contains(lower,"solid")  || contains(lower,"liquid") || contains(lower,"melting")  ||
+            contains(lower,"boiling")|| contains(lower,"matter")  || contains(lower,"condensat")) features[1] = 1;
+
+        if (contains(lower,"soil")   || contains(lower,"erosion")|| contains(lower,"weather")  ||
+            contains(lower,"loam")   || contains(lower,"sandy")  || contains(lower,"clay")) features[1] = 1;
+
+        if (contains(lower,"bacteria")|| contains(lower,"virus") || contains(lower,"fungus")   ||
+            contains(lower,"microorganism") || contains(lower,"disease") || contains(lower,"germ")) features[1] = 1;
+
+        // Vertebrate groups
+        if (contains(lower,"amphibian") || contains(lower,"reptile") || contains(lower,"frog") ||
+            contains(lower,"lizard")    || contains(lower,"mammal")  || contains(lower,"bird")  ||
+            contains(lower,"gill")      || contains(lower,"feather") || contains(lower,"scale")) {
+            features[7] = 1; features[1] = 1;
+        }
+
+        // Plant reproduction
+        if (contains(lower,"germinat") || contains(lower,"dispersal") || contains(lower,"vegetative")) {
+            features[6] = 1; features[1] = 1;
+        }
+
+        // Features 9-13: Living-things specifics
+        if (contains(lower, "photosynthes")) features[9]  = 1;
+        if (contains(lower, "habitat"))      features[10] = 1;
+        if (contains(lower, "food"))         features[11] = 1;
+        if (contains(lower, "water"))        features[12] = 1;
+        if (contains(lower, "grow"))         features[13] = 1;
+
+        // Features 14-17: Question type
+        if (contains(lower, "what") || contains(lower, "which")) features[14] = 1;
+        if (contains(lower, "how"))                               features[15] = 1;
+        if (contains(lower, "why"))                               features[16] = 1;
+        if (contains(lower, "when") || contains(lower, "where"))  features[17] = 1;
+
+        // Features 18-23: Educational context
+        String[] ctx = {"help", "learn", "teach", "explain", "question", "answer"};
+        for (int i = 0; i < ctx.length; i++) {
+            if (contains(lower, ctx[i])) features[18 + i] = 1;
+        }
+
+        // Feature 24: Social cue
+        if (contains(lower, "hello") || contains(lower, "hi") ||
+            contains(lower, "bye")   || contains(lower, "good")) {
+            features[24] = 1;
+        }
+
+        return features;
+    }
+
+    private boolean contains(String str, String sub) {
+        return str.indexOf(sub) != -1;
+    }
+
+    // ── Debug helpers ─────────────────────────────────────────────────────────
+    public void debugPrediction(String text) {
+        byte[] features = extractFeatures(text);
+        StringBuffer fb = new StringBuffer("Features: ");
+        for (int i = 0; i < features.length; i++) {
+            if (features[i] == 1) { fb.append(getFeatureName(i)); fb.append(' '); }
+        }
+        System.out.println(fb.toString());
+
+        byte intent = predict(text);
+        StringBuffer db = new StringBuffer("DEBUG '");
+        db.append(text); db.append("' -> Intent ");
+        db.append(intent); db.append(" ("); db.append(getIntentName(intent));
+        db.append(") conf="); db.append(getLastConfidence());
+        System.out.println(db.toString());
+    }
+
+    private String getFeatureName(int i) {
+        String[] names = {
+            "math","science","english","calculat","experiment","grammar",
+            "plant","animal","living","photosynthes","habitat","food",
+            "water","grow","what/which","how","why","when/where",
+            "help","learn","teach","explain","question","answer","social"
+        };
+        if (i >= 0 && i < names.length) return names[i];
+        StringBuffer sb = new StringBuffer("f"); sb.append(i); return sb.toString();
+    }
+
+    private String getIntentName(byte id) {
+        switch (id) {
+            case 0: return "math_help";
+            case 1: return "science_help";
+            case 2: return "english_help";
+            case 3: return "quiz";
+            case 4: return "general_help";
+            case 5: return "progress";
+            case 6: return "greeting";
+            case 7: return "farewell";
+            default: return "unknown";
+        }
+    }
+
     public void testModel() {
         System.out.println("=== Model Testing ===");
-        String[] testCases = {
-                "what is photosynthesis",
-                "how do plants grow",
-                "animal habitats",
-                "vertebrate animals",
-                "food chain living things",
-                "math addition problem",
-                "english grammar nouns",
-                "science experiment",
-                "take a quiz",
-                "show my progress",
-                "good morning",
-                "goodbye"
+        String[] cases = {
+            "what is photosynthesis", "how do plants grow", "animal habitats",
+            "vertebrate animals", "food chain living things", "math addition problem",
+            "english grammar nouns", "science experiment", "take a quiz",
+            "show my progress", "good morning", "goodbye"
         };
-
-        for (int i = 0; i < testCases.length; i++) {
-            debugPrediction(testCases[i]);
-        }
+        for (int i = 0; i < cases.length; i++) debugPrediction(cases[i]);
     }
 }
