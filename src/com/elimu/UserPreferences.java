@@ -12,9 +12,9 @@ public class UserPreferences {
     private static int quizTotalAnswered = 0;
 
     // Topic categories: Plants=0, Invertebrates=1, Vertebrates=2, Circulatory=3,
-    //                   HumanBody=4, Reproduction=5, Matter=6, Ecology=7
-    private static int[] topicCorrect   = new int[8];
-    private static int[] topicAttempted = new int[8];
+    //                   HumanBody=4, Reproduction=5, Matter=6, Ecology=7, Mathematics=8
+    private static int[] topicCorrect   = new int[9];
+    private static int[] topicAttempted = new int[9];
 
     public static int getTotalQuestions()   { return totalQuestions; }
     public static int getLocalAnswers()     { return localAnswers; }
@@ -44,26 +44,26 @@ public class UserPreferences {
     }
 
     public static void recordTopicResult(int topic, boolean correct) {
-        if (topic >= 0 && topic < 8) {
+        if (topic >= 0 && topic < 9) {
             topicAttempted[topic]++;
             if (correct) topicCorrect[topic]++;
         }
     }
 
     public static int getTopicCorrect(int topic) {
-        if (topic >= 0 && topic < 8) return topicCorrect[topic];
+        if (topic >= 0 && topic < 9) return topicCorrect[topic];
         return 0;
     }
 
     public static int getTopicAttempted(int topic) {
-        if (topic >= 0 && topic < 8) return topicAttempted[topic];
+        if (topic >= 0 && topic < 9) return topicAttempted[topic];
         return 0;
     }
 
     public static int getWeakestTopic() {
         int weakest = 0;
         float weakestScore = 2.0f; // higher than any possible ratio
-        for (int t = 0; t < 8; t++) {
+        for (int t = 0; t < 9; t++) {
             float score;
             if (topicAttempted[t] == 0) {
                 score = 0.5f; // neutral for never attempted
@@ -88,6 +88,7 @@ public class UserPreferences {
             case 5: return "Reproduction";
             case 6: return "Matter/Soil";
             case 7: return "Ecology/Water";
+            case 8: return "Mathematics";
             default: return "Unknown";
         }
     }

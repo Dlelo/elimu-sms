@@ -41,6 +41,8 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     private int[] quizOrder = new int[10];
     private int quizSessionLength = 10;
     private int quizRandSeed;
+    private int quizMode = 0;         // 0 = Math, 1 = Science
+    private List quizTypeList;
 
     // ── Quiz bank (CBC Grade 6, 40 questions) ────────────────────────────────
     private static final String[] QUESTIONS = {
@@ -91,7 +93,69 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         // Topic 7: Ecology/Water (37-39)
         "What does a food chain show?",
         "What is a habitat?",
-        "What is the role of decomposers in an ecosystem?"
+        "What is the role of decomposers in an ecosystem?",
+        // Topic 8: Mathematics (40-52) — KPSEA Grade 6 Term 1
+        "What is the place value of digit 4 in 492,600?",
+        "Round off 56,380 to the nearest thousand.",
+        "Convert 40% as a fraction in its simplest form.",
+        "A governor distributed 2,793 T-shirts equally among 147 regions. How many T-shirts did each region receive?",
+        "Multiply: 2,141 x 16",
+        "Mwamburi's string is 7cm long. Mwakideu's is 2cm shorter. What is the total length of their strings?",
+        "A grandmother cooked 12 litres 500ml of porridge. She gave 9 litres 600ml to farm workers. How much is left for her grandchildren?",
+        "The circumference of a circle is 22cm and its diameter is 7cm. How many times is the circumference longer than the diameter?",
+        "Ole Macho had 25 cows and n sheep. The total number of animals was 80. Which equation can be used to find n?",
+        "Matunda had p oranges and 15 mangoes. The total number of fruits was 32. What is the value of p?",
+        "What is the square root of 361?",
+        "What is the next missing number in the pattern? 10, 12, 16, 24, 40, ___",
+        "A trader bought 260kg of sugar, sold 175kg, then bought 195kg more. How many kg does the trader have now?",
+        // KNEC KPSEA Mathematics (53-88)
+        "There were sixty five thousand and fifty people at an agricultural show. What is the number in symbols?",
+        "A school had 1204 learners. 132 left and later 214 joined. How many learners are there now?",
+        "A factory produced 7,435 pieces of soap and 1,263 were packed. How many pieces were NOT packed?",
+        "A lorry carried 452 cartons with 24 books each. How many books altogether?",
+        "Work out: 64 / 4 x 2 + 8",
+        "Arrange the fractions 3/4, 2/5, 1/3 from smallest to largest.",
+        "Arrange 0.75, 1.25, 0.8, 1.135 from largest to smallest.",
+        "Neema ran on a 21m 45cm track three times. What total distance did she cover?",
+        "A worker bought 175kg cement, 473kg sand and 282kg ballast. What is the total mass?",
+        "Jeru visited his grandmother for 13 days. How many weeks and days is that?",
+        "Asha started reading at 11:15am and read for 1 and a half hours. What time did she stop?",
+        "Which list shows money paid by the public to a county government of Kenya?",
+        "Masudi bought 2 packets of milk (sh55 each), a loaf of bread (sh50) and tea leaves (sh45). He gave sh500. What was his balance?",
+        "Which shape has all angles equal, 4 lines of symmetry and all sides equal?",
+        "COVID-19 cases: Nakuru=135, Garissa=17, Kwale=8, Kisii=10. Total=656. How many cases were in Nairobi?",
+        "Nine hundred and fifty-four thousand eight hundred and sixty in symbols is?",
+        "Using digits 5, 9, 0, 2, 1, 4, 8, what is the largest 7-digit number possible?",
+        "A truck carried 572 cartons with 37 books each. How many books in total?",
+        "A farmer planted 365 trees in each of 12 gardens. How many trees were planted altogether?",
+        "Work out: 36 / 6 x 7 + 25 - 39",
+        "Estimate: 1395 books shared equally among 23 schools (round each to nearest 10).",
+        "Philip scored 27 out of 30 in a science test. What was the score as a percentage?",
+        "Round off 69.687 to 2 decimal places.",
+        "A bottle is 27cm 8mm tall. What is its height in millimetres?",
+        "A businessman sold 50.123kg then 12.5kg of beans. How many kilograms altogether?",
+        "1278 desks were distributed equally among 6 schools. How many desks per school?",
+        "A lady was given a tender to supply 100 bags of beans, each weighing 90kg. How many tonnes?",
+        "Nanjala's school is 5km 200m away. She walks to school and back Monday to Friday. Total distance?",
+        "Kioko arranged boxes in 3 layers, each with 4 columns and 5 rows. How many boxes altogether?",
+        "A rectangular tank measures 50cm x 80cm x 60cm. How many cubic cm of water does it hold?",
+        "How many quarter litres can be obtained from 20 litres?",
+        "Wesonga had P cows. He gave away 72 and remained with 48. Which equation represents this?",
+        "Solve: 9x - 7 = 35 + 2x",
+        "Green grocery: carrots 0.27, tomatoes 0.345, kales 0.135. What portion do these three cover?",
+        "In a triangle, the angles a, b and c satisfy which relationship?",
+        "Ann has x bananas, Tom has the same as Ann, Tesse has 3. Which expression shows the total?",
+        // Science additions (89-98)
+        "Which of the following is NOT a function of leaves?",
+        "Which characteristics are for a spider and a snail respectively?",
+        "Which one is a characteristic of BOTH a snake and a lizard?",
+        "Which statement shows the function of the colon? (i) Absorbs water & minerals (ii) Absorbs digested food (iii) Digests proteins (iv) Food chewed by teeth",
+        "A thin sheet of muscle that separates the chest and abdomen is called?",
+        "A learner's head was damaged in an accident and became unconscious. Which skull function was impaired?",
+        "Which type of teeth is: sharp pointed, longer than other teeth, has one root?",
+        "In the female reproductive system, fertilisation takes place in the?",
+        "Balloons started bursting during a hot afternoon. What conclusion can be made?",
+        "Which component of air makes up 0.03%?"
     };
 
     private static final String[][] OPTIONS = {
@@ -174,7 +238,125 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         // Q38
         {"A) A type of food","B) The natural home of an organism","C) A water body","D) A type of plant"},
         // Q39
-        {"A) Produce food by photosynthesis","B) Eat other animals","C) Break down dead matter into nutrients","D) Pollinate flowers"}
+        {"A) Produce food by photosynthesis","B) Eat other animals","C) Break down dead matter into nutrients","D) Pollinate flowers"},
+        // Q40
+        {"A) Tens of thousands","B) Hundreds of thousands","C) Four hundred thousand","D) Millions"},
+        // Q41
+        {"A) 56,000","B) 56,300","C) 60,000","D) 56,400"},
+        // Q42
+        {"A) 40/100","B) 2/5","C) 4/10","D) 2/4"},
+        // Q43
+        {"A) 29","B) 19","C) 18","D) 27"},
+        // Q44
+        {"A) 33,156","B) 34,246","C) 34,256","D) 33,255"},
+        // Q45
+        {"A) 9 cm","B) 900 mm","C) 12,000 mm","D) 12 cm"},
+        // Q46
+        {"A) 22L 100ml","B) 2L 100ml","C) 2L 1100ml","D) 2L 900ml"},
+        // Q47
+        {"A) 15","B) 3 1/7","C) 7/22","D) 7 1/3"},
+        // Q48
+        {"A) 80 = 25 - n","B) 80 + 25 = n","C) 25 + n = 80","D) 25 x n = 80"},
+        // Q49
+        {"A) 17","B) 47","C) 15","D) 32"},
+        // Q50
+        {"A) 29","B) 19","C) 17","D) 27"},
+        // Q51
+        {"A) 32","B) 42","C) 64","D) 72"},
+        // Q52
+        {"A) 20","B) 85","C) 280","D) 455"},
+        // Q53
+        {"A) 60,550","B) 65,550","C) 60,505","D) 65,050"},
+        // Q54
+        {"A) 1,550","B) 1,286","C) 1,122","D) 858"},
+        // Q55
+        {"A) 6,172","B) 6,232","C) 6,272","D) 8,698"},
+        // Q56
+        {"A) 11,848","B) 10,848","C) 9,648","D) 2,712"},
+        // Q57
+        {"A) 160","B) 40","C) 16","D) 4"},
+        // Q58
+        {"A) 1/3, 2/5, 3/4","B) 3/4, 1/3, 2/5","C) 2/5, 1/3, 3/4","D) 1/3, 3/4, 2/5"},
+        // Q59
+        {"A) 0.75, 0.8, 1.135, 1.25","B) 0.75, 1.135, 1.25, 0.8","C) 1.135, 1.25, 0.8, 0.75","D) 1.25, 1.135, 0.8, 0.75"},
+        // Q60
+        {"A) 7m 15cm","B) 42m 90cm","C) 64m 35cm","D) 128m 70cm"},
+        // Q61
+        {"A) 930 kg","B) 755 kg","C) 648 kg","D) 457 kg"},
+        // Q62
+        {"A) 1 week 3 days","B) 1 week 6 days","C) 2 weeks 0 days","D) 2 weeks 3 days"},
+        // Q63
+        {"A) 11:45 am","B) 11:45 pm","C) 12:45 pm","D) 12:45 am"},
+        // Q64
+        {"A) Land fees, school fees, parking, cess","B) Market fees, cess, business permit, security fee","C) Market fees, business permit, cess, parking fee","D) Land fees, security fee, business permit, parking fee"},
+        // Q65
+        {"A) sh 350","B) sh 295","C) sh 255","D) sh 205"},
+        // Q66
+        {"A) Right angled triangle","B) Equilateral triangle","C) Square","D) Rectangle"},
+        // Q67
+        {"A) 170","B) 386","C) 486","D) 1,142"},
+        // Q68
+        {"A) 950,486","B) 954,860","C) 945,680","D) 944,806"},
+        // Q69
+        {"A) 5,902,148","B) 9,501,248","C) 9,854,210","D) 0,124,589"},
+        // Q70
+        {"A) 20,164","B) 16,421","C) 21,164","D) 31,461"},
+        // Q71
+        {"A) 4,380","B) 377","C) 4,280","D) 8,043"},
+        // Q72
+        {"A) 30","B) 26","C) 14","D) 28"},
+        // Q73
+        {"A) 75","B) 60","C) 70","D) 80"},
+        // Q74
+        {"A) 90%","B) 70%","C) 80%","D) 88%"},
+        // Q75
+        {"A) 70.00","B) 69.69","C) 69.70","D) 69.680"},
+        // Q76
+        {"A) 107 mm","B) 213 mm","C) 278 mm","D) 19 mm"},
+        // Q77
+        {"A) 62.623 kg","B) 62.63 kg","C) 63.236 kg","D) 63.32 kg"},
+        // Q78
+        {"A) 213","B) 312","C) 123","D) 218"},
+        // Q79
+        {"A) 9,000 tonnes","B) 9 tonnes","C) 90 tonnes","D) 900 tonnes"},
+        // Q80
+        {"A) 50km 200m","B) 52km 200m","C) 52km 400m","D) 52km"},
+        // Q81
+        {"A) 90","B) 30","C) 60","D) 12"},
+        // Q82
+        {"A) 190 cm3","B) 2,400 cm3","C) 24,000 cm3","D) 240,000 cm3"},
+        // Q83
+        {"A) 5","B) 24","C) 80","D) 16"},
+        // Q84
+        {"A) P + 72 = 48","B) P - 72 = 48","C) P + 48 = 72","D) 72 - 48 = P"},
+        // Q85
+        {"A) x = 42","B) x = 4","C) x > 6","D) x = 6"},
+        // Q86
+        {"A) 0.86","B) 0.75","C) 0.655","D) 1.00"},
+        // Q87
+        {"A) a + b + c = 180","B) a + b - c = 180","C) a - b + c = 180","D) a - b - c = 180"},
+        // Q88
+        {"A) x + x + 3","B) x + 3","C) 3x + 3","D) 3x"},
+        // Q89 Science - Plants
+        {"A) Absorb water and mineral salts","B) Exchange gases through stomata","C) Make food by photosynthesis","D) Remove waste through transpiration"},
+        // Q90 Science - Invertebrates
+        {"A) 2 body parts; moves by gliding","B) 2 body parts; 3 body parts","C) 8 legs; moves by gliding","D) 8 legs; 3 body parts"},
+        // Q91 Science - Vertebrates
+        {"A) Have scales","B) Give birth to live young","C) Are warm-blooded","D) Breathe through gills"},
+        // Q92 Science - Human Body
+        {"A) i - Absorbs water and mineral salts","B) ii - Absorbs digested food","C) iii - Digests proteins","D) iv - Food chewed by teeth"},
+        // Q93 Science - Human Body
+        {"A) Lungs","B) Diaphragm","C) Ileum","D) Stomach"},
+        // Q94 Science - Human Body
+        {"A) Supporting the neck","B) Balancing the body","C) Protecting the lungs","D) Enclosing and protecting the brain"},
+        // Q95 Science - Human Body
+        {"A) Premolar","B) Molar","C) Incisor","D) Canine"},
+        // Q96 Science - Reproduction
+        {"A) Ovary","B) Oviduct (Fallopian tube)","C) Uterus","D) Vagina"},
+        // Q97 Science - Matter
+        {"A) Gases expand when heated","B) Gases contract when heated","C) Balloons expand when heated","D) Gases contract when cooled"},
+        // Q98 Science - Ecology/Air
+        {"A) Oxygen","B) Nitrogen","C) Inert gases","D) Carbon dioxide"}
     };
 
     // Correct answer index (0=A, 1=B, 2=C, 3=D)
@@ -186,7 +368,12 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         0, 1, 2, 1, 0, 2,          // 24-29 Human Body
         1, 0, 2, 3,                // 30-33 Reproduction
         0, 2, 1,                   // 34-36 Matter/Soil
-        0, 1, 2                    // 37-39 Ecology/Water
+        0, 1, 2,                   // 37-39 Ecology/Water
+        1, 0, 1, 1, 2, 3, 3, 1, 2, 0, 1, 3, 2,          // 40-52 Mathematics (KPSEA Term 1)
+        3, 1, 0, 1, 1, 0, 3, 2, 0, 1, 2, 2, 1, 2, 2,   // 53-67 Mathematics (KNEC KPSEA)
+        1, 2, 2, 0, 3, 2, 0, 1, 2, 0, 0, 1, 3, 2, 3,   // 68-82 Mathematics (KNEC KPSEA)
+        2, 1, 3, 1, 0, 0,                               // 83-88 Mathematics (KNEC KPSEA)
+        0, 2, 0, 0, 1, 3, 3, 1, 0, 3                   // 89-98 Science
     };
 
     private static final String[] EXPLANATIONS = {
@@ -269,20 +456,143 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         // Q38
         "Habitat: the natural home of an organism where it gets food, water, shelter and space it needs to survive.",
         // Q39
-        "Decomposers (bacteria, fungi) break down dead plants and animals into nutrients that enrich the soil."
+        "Decomposers (bacteria, fungi) break down dead plants and animals into nutrients that enrich the soil.",
+        // Q40
+        "In 492,600 the digit 4 is in the hundred-thousands place (4 x 100,000 = 400,000).",
+        // Q41
+        "56,380: the hundreds digit is 3 (less than 5), so round down. Answer: 56,000.",
+        // Q42
+        "40% = 40/100. Divide both by HCF 20: 40/100 = 2/5. This is the simplest form.",
+        // Q43
+        "2,793 / 147 = 19. Check: 147 x 19 = 147 x 20 - 147 = 2,940 - 147 = 2,793.",
+        // Q44
+        "2,141 x 16 = 2,141 x 10 + 2,141 x 6 = 21,410 + 12,846 = 34,256.",
+        // Q45
+        "Mwakideu's string = 7 - 2 = 5 cm. Total = 7 + 5 = 12 cm.",
+        // Q46
+        "12L 500ml = 12,500ml. 12,500 - 9,600 = 2,900ml = 2 litres 900ml.",
+        // Q47
+        "Circumference / diameter = 22 / 7 = 3 1/7. This ratio is pi (pi = 22/7 approx 3.14).",
+        // Q48
+        "Total = cows + sheep: 25 + n = 80. Solve: n = 80 - 25 = 55 sheep.",
+        // Q49
+        "p + 15 = 32. Therefore p = 32 - 15 = 17 oranges.",
+        // Q50
+        "sqrt(361) = 19, because 19 x 19 = 361. Check: 18x18=324, 20x20=400.",
+        // Q51
+        "Differences: 2, 4, 8, 16 (each doubles). Next difference = 32. Answer: 40 + 32 = 72.",
+        // Q52
+        "260 - 175 = 85 kg remaining. 85 + 195 = 280 kg total.",
+        // Q53
+        "65,050: sixty five thousand (65,000) + fifty (50) = 65,050.",
+        // Q54
+        "1204 - 132 = 1072. Then 1072 + 214 = 1286 learners.",
+        // Q55
+        "7435 - 1263 = 6172 pieces not packed.",
+        // Q56
+        "452 x 24 = 452 x 20 + 452 x 4 = 9040 + 1808 = 10848 books.",
+        // Q57
+        "BODMAS: 64/4=16, 16x2=32, 32+8=40. Division and multiplication before addition.",
+        // Q58
+        "Convert to decimals: 1/3=0.333, 2/5=0.4, 3/4=0.75. Ascending: 1/3, 2/5, 3/4.",
+        // Q59
+        "Descending: 1.25 > 1.135 > 0.8 > 0.75. Compare digits position by position from left.",
+        // Q60
+        "21m 45cm x 3 = 63m 135cm = 63m + 1m 35cm = 64m 35cm.",
+        // Q61
+        "175 + 473 + 282 = 648 + 282 = 930 kg total.",
+        // Q62
+        "13 / 7 = 1 remainder 6. Therefore 1 week 6 days.",
+        // Q63
+        "11:15am + 1hr 30min (1.5 hours) = 12:45pm.",
+        // Q64
+        "County revenues: market fees, business permits, cess (levy on produce), parking fees. School fees and land registry go to national government.",
+        // Q65
+        "2x55 + 50 + 45 = 110 + 95 = 205. Change = 500 - 205 = sh 295.",
+        // Q66
+        "A square: all 4 angles = 90 degrees, all 4 sides equal, 4 lines of symmetry (2 diagonals + horizontal + vertical).",
+        // Q67
+        "Others: 135+17+8+10 = 170. Nairobi = 656 - 170 = 486 cases.",
+        // Q68
+        "954,860: nine hundred and fifty-four thousand (954,000) + eight hundred and sixty (860).",
+        // Q69
+        "Arrange digits in descending order: 9,8,5,4,2,1,0 gives 9854210.",
+        // Q70
+        "572 x 37 = 572 x 30 + 572 x 7 = 17160 + 4004 = 21164 books.",
+        // Q71
+        "365 x 12 = 365 x 10 + 365 x 2 = 3650 + 730 = 4380 trees.",
+        // Q72
+        "BODMAS: 36/6=6, 6x7=42, 42+25=67, 67-39=28.",
+        // Q73
+        "Round 1395 to 1400, round 23 to 20. Estimate: 1400/20 = 70 books per school.",
+        // Q74
+        "27/30 x 100 = 2700/30 = 90%.",
+        // Q75
+        "69.687: the 3rd decimal is 7 (>=5), round up the 2nd decimal: 69.69.",
+        // Q76
+        "27cm 8mm = 27 x 10 + 8 = 270 + 8 = 278mm.",
+        // Q77
+        "50.123 + 12.500 = 62.623 kg. Align decimal points when adding.",
+        // Q78
+        "1278 / 6 = 213. Check: 6 x 213 = 1278.",
+        // Q79
+        "100 x 90kg = 9000kg. 9000 / 1000 = 9 tonnes (1 tonne = 1000 kg).",
+        // Q80
+        "Round trip daily: 5.2km x 2 = 10.4km. For 5 days: 10.4 x 5 = 52km.",
+        // Q81
+        "4 columns x 5 rows = 20 boxes per layer. 20 x 3 layers = 60 boxes.",
+        // Q82
+        "Volume = 50 x 80 x 60 = 240,000 cm3.",
+        // Q83
+        "20 litres / 0.25 = 80. Equivalently: 20 x 4 = 80 quarter litres.",
+        // Q84
+        "P - 72 = 48: Wesonga had P cows, gave away 72, remained with 48. Solve: P = 48 + 72 = 120.",
+        // Q85
+        "9x - 2x = 35 + 7. 7x = 42. x = 6.",
+        // Q86
+        "Carrots(0.27) + Tomatoes(0.345) + Kales(0.135) = 0.75.",
+        // Q87
+        "Angles in any triangle always sum to 180 degrees: a + b + c = 180.",
+        // Q88
+        "Ann=x, Tom=x (same as Ann), Tesse=3. Total = x + x + 3.",
+        // Q89
+        "Leaves do NOT absorb water - that is the job of roots. Leaves exchange gases through stomata, make food via photosynthesis, and release water by transpiration.",
+        // Q90
+        "Spider: 2 body parts (cephalothorax + abdomen) and 8 legs. Snail: 1 body part, moves by gliding on a muscular foot.",
+        // Q91
+        "Snakes and lizards are both reptiles: cold-blooded, dry scaly skin. They lay eggs and breathe through lungs.",
+        // Q92
+        "The colon (large intestine) absorbs water and mineral salts from undigested food. The small intestine absorbs digested nutrients.",
+        // Q93
+        "The diaphragm is a dome-shaped sheet of muscle below the lungs. It separates the chest from the abdomen and moves to help breathing.",
+        // Q94
+        "The skull (cranium) encloses and protects the brain. A damaged skull impairs brain protection, which can cause unconsciousness.",
+        // Q95
+        "Canine teeth: sharp, pointed, longer than incisors, one root. Used for tearing food. Located at the corners of the mouth.",
+        // Q96
+        "Fertilisation (joining of sperm and egg) occurs in the oviduct (Fallopian tube). The fertilised egg then moves to the uterus to develop.",
+        // Q97
+        "Gases expand when heated. Hot afternoon sun warms the air inside balloons, causing them to expand and eventually burst.",
+        // Q98
+        "Composition of air: Nitrogen 78%, Oxygen 21%, Carbon dioxide 0.03%, Inert gases (Argon etc.) ~0.97%."
     };
 
     // Topic index for each question (0=Plants, 1=Invertebrates, 2=Vertebrates,
-    //   3=Circulatory, 4=HumanBody, 5=Reproduction, 6=Matter, 7=Ecology)
+    //   3=Circulatory, 4=HumanBody, 5=Reproduction, 6=Matter, 7=Ecology, 8=Mathematics)
     private static final int[] QUESTION_TOPIC = {
-        0,0,0,0,0,0,0,0,   // 0-7  Plants
-        1,1,1,1,1,          // 8-12 Invertebrates
-        2,2,2,2,2,          // 13-17 Vertebrates
-        3,3,3,3,3,3,        // 18-23 Circulatory
-        4,4,4,4,4,4,        // 24-29 Human Body
-        5,5,5,5,            // 30-33 Reproduction
-        6,6,6,              // 34-36 Matter/Soil
-        7,7,7               // 37-39 Ecology/Water
+        0,0,0,0,0,0,0,0,           // 0-7  Plants
+        1,1,1,1,1,                  // 8-12 Invertebrates
+        2,2,2,2,2,                  // 13-17 Vertebrates
+        3,3,3,3,3,3,                // 18-23 Circulatory
+        4,4,4,4,4,4,                // 24-29 Human Body
+        5,5,5,5,                    // 30-33 Reproduction
+        6,6,6,                      // 34-36 Matter/Soil
+        7,7,7,                      // 37-39 Ecology/Water
+        8,8,8,8,8,8,8,8,8,8,8,8,8,    // 40-52  Mathematics (KPSEA Term 1)
+        8,8,8,8,8,8,8,8,8,8,8,8,8,8,8, // 53-67  Mathematics (KNEC KPSEA)
+        8,8,8,8,8,8,8,8,8,8,8,8,8,8,8, // 68-82  Mathematics (KNEC KPSEA)
+        8,8,8,8,8,8,                    // 83-88  Mathematics (KNEC KPSEA)
+        0,1,2,4,4,4,4,5,6,7             // 89-98  Science
     };
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -312,11 +622,12 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     // ── Main Menu ────────────────────────────────────────────────────────────
     private void showMainMenu() {
         mainMenu = new List("ElimuSMS - STEM Grade 6", Choice.IMPLICIT);
-        mainMenu.append("Ask Question", null);
-        mainMenu.append("Math Help",    null);
-        mainMenu.append("Science Help", null);
-        mainMenu.append("Take Quiz",    null);
-        mainMenu.append("My Progress",  null);
+        mainMenu.append("Ask Question",  null);
+        mainMenu.append("Math Help",     null);
+        mainMenu.append("Science Help",  null);
+        mainMenu.append("Math Quiz",     null);
+        mainMenu.append("Science Quiz",  null);
+        mainMenu.append("My Progress",   null);
         mainMenu.addCommand(selectCmd);
         mainMenu.addCommand(exitCmd);
         mainMenu.setCommandListener(this);
@@ -340,6 +651,8 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             showTopicPicker();
         } else if (c == selectCmd && d == topicPickerList) {
             handleFeedbackSelection();
+        } else if (c == selectCmd && d == quizTypeList) {
+            startQuiz(quizTypeList.getSelectedIndex()); // 0=Math, 1=Science
         } else if (c == backCmd) {
             showMainMenu();
         }
@@ -350,8 +663,9 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             case 0: showQuestionScreen(); break;
             case 1: showQuestionScreen(); break;  // Math
             case 2: showQuestionScreen(); break;  // Science
-            case 3: startQuiz();          break;
-            case 4: showProgress();       break;
+            case 3: startQuiz(0);         break;  // Math Quiz
+            case 4: startQuiz(1);         break;  // Science Quiz
+            case 5: showProgress();       break;
         }
     }
 
@@ -400,13 +714,21 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
                     case 0: handleMathQuestion(question);    break;
                     case 1: handleScienceQuestion(question); break;
                     case 2: handleScienceQuestion(question); break; // was English - route to science
-                    case 3: startQuiz();                     break;
+                    case 3: showQuizTypePicker();            break;
                     case 4: handleLowConfidence(question);   break;
                     case 5: showProgress();                  break;
                     case 6: showResponse("Hello! Ask me about math or science.", "Hi!"); break;
                     case 7: showResponse("Goodbye! Keep learning STEM!", "Bye!"); break;
                     default: handleLowConfidence(question);  break;
                 }
+            } else if (intentId == 0 && isMathQuery(question)) {
+                // Classifier agrees it's math; keyword confirms it — route at low confidence
+                lastSuccessfulIntent = 0;
+                handleMathQuestion(question);
+            } else if ((intentId == 1 || intentId == 2) && isScienceQuery(question)) {
+                // Classifier agrees it's science; keyword confirms it — route at low confidence
+                lastSuccessfulIntent = 1;
+                handleScienceQuestion(question);
             } else {
                 handleLowConfidence(question);
             }
@@ -462,6 +784,17 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
 
     // ── Science / Living Things (CBC Grade 6) ────────────────────────────────
     private void handleScienceQuestion(String question) {
+        // Backstop: arithmetic operators or digit/digit fraction → route to math
+        if (question.indexOf('+') >= 0 || question.indexOf('*') >= 0) {
+            handleMathQuestion(question); return;
+        }
+        String noSp = removeSpaces(question);
+        for (int i = 1; i < noSp.length() - 1; i++) {
+            if (noSp.charAt(i) == '/' && Character.isDigit(noSp.charAt(i - 1))
+                    && Character.isDigit(noSp.charAt(i + 1))) {
+                handleMathQuestion(question); return;
+            }
+        }
         String lower = question.toLowerCase();
 
         // --- Plants ---
@@ -735,24 +1068,43 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     // ── Select quiz questions using Fisher-Yates shuffle ─────────────────────
+    private void showQuizTypePicker() {
+        quizTypeList = new List("Choose Quiz Type", Choice.IMPLICIT);
+        quizTypeList.append("Math Quiz",    null);
+        quizTypeList.append("Science Quiz", null);
+        quizTypeList.addCommand(selectCmd);
+        quizTypeList.addCommand(backCmd);
+        quizTypeList.setCommandListener(this);
+        display.setCurrent(quizTypeList);
+    }
+
     private void selectQuizQuestions() {
         quizRandSeed = (int) System.currentTimeMillis();
-        int[] indices = new int[40];
-        for (int i = 0; i < 40; i++) {
-            indices[i] = i;
+        // Build pool: math = topic 8 only; science = topics 0-7 only
+        int poolSize = 0;
+        for (int i = 0; i < QUESTIONS.length; i++) {
+            if (quizMode == 0 && QUESTION_TOPIC[i] == 8) poolSize++;
+            else if (quizMode == 1 && QUESTION_TOPIC[i] < 8) poolSize++;
         }
-        for (int i = 39; i > 0; i--) {
+        int[] pool = new int[poolSize];
+        int k = 0;
+        for (int i = 0; i < QUESTIONS.length; i++) {
+            if (quizMode == 0 && QUESTION_TOPIC[i] == 8) pool[k++] = i;
+            else if (quizMode == 1 && QUESTION_TOPIC[i] < 8) pool[k++] = i;
+        }
+        // Fisher-Yates shuffle on pool
+        for (int i = poolSize - 1; i > 0; i--) {
             int j = nextRand() % (i + 1);
             if (j < 0) j = -j;
-            int tmp = indices[i];
-            indices[i] = indices[j];
-            indices[j] = tmp;
+            int tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
         }
-        System.arraycopy(indices, 0, quizOrder, 0, 10);
+        quizSessionLength = poolSize < 10 ? poolSize : 10;
+        System.arraycopy(pool, 0, quizOrder, 0, quizSessionLength);
     }
 
     // ── Quiz ─────────────────────────────────────────────────────────────────
-    private void startQuiz() {
+    private void startQuiz(int mode) {
+        quizMode = mode;
         selectQuizQuestions();
         quizIndex = 0;
         quizScore = 0;
@@ -762,7 +1114,7 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     private void showQuizQuestion(int sessionIdx) {
         int actualIdx = quizOrder[sessionIdx];
 
-        StringBuffer title = new StringBuffer("Quiz ");
+        StringBuffer title = new StringBuffer(quizMode == 0 ? "Math Quiz " : "Science Quiz ");
         title.append(sessionIdx + 1);
         title.append("/");
         title.append(quizSessionLength);
@@ -815,7 +1167,7 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         if (nextIndex < quizSessionLength) {
             // Pre-build the next question form so the Alert can transition to it
             int nextActualIdx = quizOrder[nextIndex];
-            StringBuffer nextTitle = new StringBuffer("Quiz ");
+            StringBuffer nextTitle = new StringBuffer(quizMode == 0 ? "Math Quiz " : "Science Quiz ");
             nextTitle.append(nextIndex + 1);
             nextTitle.append("/");
             nextTitle.append(quizSessionLength);
@@ -846,7 +1198,7 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     private Form buildResultsForm() {
-        Form results = new Form("Quiz Results");
+        Form results = new Form(quizMode == 0 ? "Math Quiz Results" : "Science Quiz Results");
 
         int total = quizSessionLength;
         int pct   = (quizScore * 100) / total;
@@ -905,7 +1257,7 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         }
 
         sb.append("\n\n=== Topic Breakdown ===");
-        for (int t = 0; t < 8; t++) {
+        for (int t = 0; t < 9; t++) {
             int tCorrect   = UserPreferences.getTopicCorrect(t);
             int tAttempted = UserPreferences.getTopicAttempted(t);
             sb.append("\n"); sb.append(UserPreferences.getTopicName(t));
@@ -925,16 +1277,81 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     /**
      * Prepend the last topic keyword so ambiguous follow-up questions inherit context.
      */
+    private boolean isMathQuery(String q) {
+        if (q.indexOf('+') >= 0 || q.indexOf('*') >= 0) return true;
+        // fraction pattern: digit/digit
+        for (int i = 1; i < q.length() - 1; i++) {
+            if (q.charAt(i) == '/' && Character.isDigit(q.charAt(i - 1))
+                    && Character.isDigit(q.charAt(i + 1))) return true;
+        }
+        // subtraction between numbers or after a space
+        for (int i = 1; i < q.length(); i++) {
+            if (q.charAt(i) == '-'
+                    && (Character.isDigit(q.charAt(i - 1)) || q.charAt(i - 1) == ' '))
+                return true;
+        }
+        String lower = q.toLowerCase();
+        return contains(lower, "fraction") || contains(lower, "percent")
+            || contains(lower, "lcm")      || contains(lower, "hcf")
+            || contains(lower, "ratio")    || contains(lower, "decimal")
+            || contains(lower, "mean")     || contains(lower, "mode")
+            || contains(lower, "range")    || contains(lower, "area")
+            || contains(lower, "perimeter")|| contains(lower, "volume")
+            || contains(lower, "average")  || contains(lower, "calculat")
+            || contains(lower, "multiply") || contains(lower, "divide");
+    }
+
+    private boolean isScienceQuery(String q) {
+        String lower = q.toLowerCase();
+        return contains(lower, "plant")     || contains(lower, "animal")
+            || contains(lower, "photo")     || contains(lower, "transpir")
+            || contains(lower, "root")      || contains(lower, "leaf")
+            || contains(lower, "leaves")    || contains(lower, "seed")
+            || contains(lower, "flower")    || contains(lower, "pollin")
+            || contains(lower, "germinat")  || contains(lower, "blood")
+            || contains(lower, "heart")     || contains(lower, "pulse")
+            || contains(lower, "vein")      || contains(lower, "artery")
+            || contains(lower, "lung")      || contains(lower, "breath")
+            || contains(lower, "digest")    || contains(lower, "stomach")
+            || contains(lower, "bone")      || contains(lower, "muscle")
+            || contains(lower, "insect")    || contains(lower, "spider")
+            || contains(lower, "bacteria")  || contains(lower, "virus")
+            || contains(lower, "soil")      || contains(lower, "erosion")
+            || contains(lower, "weather")   || contains(lower, "cloud")
+            || contains(lower, "ecosystem") || contains(lower, "food chain")
+            || contains(lower, "reproduct") || contains(lower, "adolescen")
+            || contains(lower, "vertebrat") || contains(lower, "mammal")
+            || contains(lower, "reptile")   || contains(lower, "amphibian")
+            || contains(lower, "lever")     || contains(lower, "pulley")
+            || contains(lower, "matter")    || contains(lower, "solid")
+            || contains(lower, "liquid")    || contains(lower, "gas")
+            || contains(lower, "living")    || contains(lower, "organism")
+            || contains(lower, "chlorophyl")|| contains(lower, "stomata");
+    }
+
+    /**
+     * Inject domain prefix only when the query is genuinely ambiguous.
+     * A query that already has clear math or science signals is routed directly
+     * without forcing the previous session's context onto it.
+     */
     private String injectContext(String q) {
+        boolean math    = isMathQuery(q);
+        boolean science = isScienceQuery(q);
+
+        // Query has its own clear signal — use that, not the session history
+        if (math && !science) {
+            StringBuffer sb = new StringBuffer("math "); sb.append(q); return sb.toString();
+        }
+        if (science && !math) {
+            StringBuffer sb = new StringBuffer("science "); sb.append(q); return sb.toString();
+        }
+
+        // Ambiguous (both or neither) — fall back to session context
         if (lastSuccessfulIntent == 0) {
-            StringBuffer sb = new StringBuffer("math ");
-            sb.append(q);
-            return sb.toString();
+            StringBuffer sb = new StringBuffer("math ");    sb.append(q); return sb.toString();
         }
         if (lastSuccessfulIntent == 1) {
-            StringBuffer sb = new StringBuffer("science ");
-            sb.append(q);
-            return sb.toString();
+            StringBuffer sb = new StringBuffer("science "); sb.append(q); return sb.toString();
         }
         return q;
     }
@@ -1048,28 +1465,97 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         return new String(chars, 0, j);
     }
 
+    // ── Fraction arithmetic helpers ──────────────────────────────────────────
+    private int gcd(int a, int b) {
+        if (a < 0) a = -a;
+        if (b < 0) b = -b;
+        while (b != 0) { int t = b; b = a % b; a = t; }
+        return a == 0 ? 1 : a;
+    }
+
+    /** Parse "3/4" → {3,4}  or  "5" → {5,1} */
+    private int[] parseFrac(String s) throws NumberFormatException {
+        int sl = s.indexOf('/');
+        if (sl > 0) {
+            return new int[]{ Integer.parseInt(s.substring(0, sl)),
+                              Integer.parseInt(s.substring(sl + 1)) };
+        }
+        return new int[]{ Integer.parseInt(s), 1 };
+    }
+
+    /** Format {num,den} as "3/4" or "1 1/4" or "5" */
+    private String fmtFrac(int num, int den) {
+        if (den < 0) { num = -num; den = -den; }
+        int g = gcd(num < 0 ? -num : num, den);
+        num /= g; den /= g;
+        if (den == 1) return String.valueOf(num);
+        if (num > den && den > 1) {
+            int whole = num / den;
+            int rem   = num % den;
+            if (rem == 0) return String.valueOf(whole);
+            return new StringBuffer().append(whole).append(" ")
+                   .append(rem).append("/").append(den).toString();
+        }
+        return new StringBuffer().append(num).append("/").append(den).toString();
+    }
+
     private String evaluateMathExpression(String expr) {
         expr = removeSpaces(expr);
-        int plus  = expr.indexOf('+');
-        int minus = expr.indexOf('-');
-        int mult  = expr.indexOf('*');
-        int div   = expr.indexOf('/');
+        // Strip leading non-numeric prefix (e.g. "math", "science")
+        int start = 0;
+        while (start < expr.length() && !Character.isDigit(expr.charAt(start))
+               && expr.charAt(start) != '-') start++;
+        if (start > 0) expr = expr.substring(start);
+
+        // Find operator — skip '/' that is part of a fraction (has digits on both sides)
+        int plus = -1, minus = -1, mult = -1, div = -1;
+        for (int i = 0; i < expr.length(); i++) {
+            char c = expr.charAt(i);
+            if (c == '+') { plus  = i; break; }
+            if (c == '*') { mult  = i; break; }
+            // '-' only counts as subtraction if not at position 0
+            if (c == '-' && i > 0) { minus = i; break; }
+            // '/' only counts as division operator if the character AFTER it is not a digit
+            // (digit/digit means fraction; digit/letter or end-of-string means division)
+            if (c == '/' && i > 0) {
+                boolean nextIsDigit = (i + 1 < expr.length())
+                        && Character.isDigit(expr.charAt(i + 1));
+                boolean prevIsDigit = Character.isDigit(expr.charAt(i - 1));
+                // If prev and next are both digits this is a fraction slash — skip
+                if (!(prevIsDigit && nextIsDigit)) { div = i; break; }
+            }
+        }
+        // Also scan for operator AFTER the first fraction operand
+        if (plus < 0 && minus < 0 && mult < 0 && div < 0) {
+            // Might be "3/4+1/2" where '+' comes after the first slash
+            for (int i = 0; i < expr.length(); i++) {
+                char c = expr.charAt(i);
+                if (c == '+') { plus  = i; break; }
+                if (c == '*') { mult  = i; break; }
+                if (c == '-' && i > 0) { minus = i; break; }
+            }
+        }
+
         try {
             if (plus > 0) {
-                return String.valueOf(Integer.parseInt(expr.substring(0, plus))
-                                   + Integer.parseInt(expr.substring(plus + 1)));
-            } else if (minus > 0) {
-                return String.valueOf(Integer.parseInt(expr.substring(0, minus))
-                                   - Integer.parseInt(expr.substring(minus + 1)));
+                int[] L = parseFrac(expr.substring(0, plus));
+                int[] R = parseFrac(expr.substring(plus + 1));
+                return fmtFrac(L[0]*R[1] + R[0]*L[1], L[1]*R[1]);
             } else if (mult > 0) {
-                return String.valueOf(Integer.parseInt(expr.substring(0, mult))
-                                   * Integer.parseInt(expr.substring(mult + 1)));
+                int[] L = parseFrac(expr.substring(0, mult));
+                int[] R = parseFrac(expr.substring(mult + 1));
+                return fmtFrac(L[0]*R[0], L[1]*R[1]);
+            } else if (minus > 0) {
+                int[] L = parseFrac(expr.substring(0, minus));
+                int[] R = parseFrac(expr.substring(minus + 1));
+                return fmtFrac(L[0]*R[1] - R[0]*L[1], L[1]*R[1]);
             } else if (div > 0) {
-                int b = Integer.parseInt(expr.substring(div + 1));
-                if (b == 0) return "Cannot divide by zero";
-                return String.valueOf(Integer.parseInt(expr.substring(0, div)) / b);
+                int[] L = parseFrac(expr.substring(0, div));
+                int[] R = parseFrac(expr.substring(div + 1));
+                if (R[0] == 0) return "Cannot divide by zero";
+                return fmtFrac(L[0]*R[1], L[1]*R[0]);
             } else {
-                return "Type an expression like 2+3 or 5*4";
+                return "Type an expression like 2+3, 5*4, or 3/4+1/2";
             }
         } catch (Exception e) {
             return "Error parsing numbers";
