@@ -1,0 +1,63 @@
+{
+  "feature_size": 17,
+  "hidden_size": 12,
+  "output_size": 8,
+  "total_weights": 300,
+  "total_biases": 20,
+  "intents": {
+    "0": "math_help",
+    "1": "science_help",
+    "2": "english_help",
+    "3": "quiz",
+    "4": "general_help",
+    "5": "progress",
+    "6": "greeting",
+    "7": "farewell"
+  },
+  "accuracy": {
+    "training": 0.6332945285215367,
+    "test": 0.6139534883720931
+  },
+  "plants_training_info": {
+    "total_examples": 1074,
+    "plants_science_examples": 304,
+    "test_cases": [
+      [
+        "plants",
+        1
+      ],
+      [
+        "about plants",
+        1
+      ],
+      [
+        "plant growth",
+        1
+      ],
+      [
+        "help with plants",
+        1
+      ],
+      [
+        "science plants",
+        1
+      ],
+      [
+        "math addition",
+        0
+      ],
+      [
+        "english grammar",
+        2
+      ],
+      [
+        "science experiment",
+        1
+      ],
+      [
+        "animals",
+        1
+      ]
+    ]
+  }
+}

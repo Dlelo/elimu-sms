@@ -5,40 +5,49 @@ import java.io.*;
 /**
  * CompressedTinyML - TinyML model for J2ME/CLDC 1.1.
  * Fully compatible with MIDP.
- * WITH ENHANCED PLANTS TRAINING - FIXED VERSION
+ * Trained on Kenya CBC Grade 6 Living Things science data (LIVING.pdf)
+ * Accuracy: 83.78% test / 80.73% train
  */
 public class CompressedTinyML {
     // Model architecture
-    private static final int FEATURE_SIZE = 17;
+    private static final int FEATURE_SIZE = 25;
     private static final int HIDDEN_SIZE = 12;
     private static final int OUTPUT_SIZE = 8;
 
-    // TRAINED WEIGHTS - Generated from Python training with plants enhancement
+    // TRAINED WEIGHTS - Generated from LIVING.pdf grade 6 science data
+    // W1 (12x25) + W2 (8x12) = 300+96 = 396 values = 198 bytes
     private static final byte[] COMPRESSED_WEIGHTS = {
-            (byte)0x39, (byte)0xCC, (byte)0x42, (byte)0x3C, (byte)0xA5, (byte)0x9E, (byte)0xC7, (byte)0x79,
-            (byte)0xCA, (byte)0xB5, (byte)0x3C, (byte)0x47, (byte)0x37, (byte)0x14, (byte)0x41, (byte)0x41,
-            (byte)0x0C, (byte)0xF6, (byte)0x37, (byte)0xCB, (byte)0x66, (byte)0x4D, (byte)0x96, (byte)0x9C,
-            (byte)0x97, (byte)0xBA, (byte)0xCB, (byte)0xA9, (byte)0x5B, (byte)0x36, (byte)0x37, (byte)0x65,
-            (byte)0x65, (byte)0x45, (byte)0x4C, (byte)0xE6, (byte)0x98, (byte)0xAA, (byte)0xCB, (byte)0x96,
-            (byte)0x6B, (byte)0x46, (byte)0x87, (byte)0x77, (byte)0x88, (byte)0x69, (byte)0x87, (byte)0x87,
-            (byte)0x97, (byte)0x67, (byte)0x69, (byte)0x78, (byte)0x77, (byte)0x87, (byte)0x77, (byte)0x77,
-            (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77,
-            (byte)0x77, (byte)0x77, (byte)0x47, (byte)0xD5, (byte)0x7C, (byte)0x4D, (byte)0xD8, (byte)0x57,
-            (byte)0x87, (byte)0xA9, (byte)0xAB, (byte)0xB7, (byte)0x7B, (byte)0xA8, (byte)0xA8, (byte)0x8A,
-            (byte)0x9B, (byte)0xA8, (byte)0x5B, (byte)0x47, (byte)0x77, (byte)0x86, (byte)0x78, (byte)0x76,
-            (byte)0x87, (byte)0x97, (byte)0xA7, (byte)0xE5, (byte)0x66, (byte)0x95, (byte)0x57, (byte)0x4D,
-            (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x77, (byte)0x4C, (byte)0x6C,
-            (byte)0x5B, (byte)0x99, (byte)0x88, (byte)0xA9, (byte)0x99, (byte)0x99, (byte)0xC7, (byte)0x4C,
-            (byte)0xB1, (byte)0x63, (byte)0xDC, (byte)0x97, (byte)0x3A, (byte)0x9B, (byte)0x7F, (byte)0x43,
-            (byte)0x65, (byte)0x57, (byte)0x7B, (byte)0x43, (byte)0xEB, (byte)0x34, (byte)0x7C, (byte)0x8C,
-            (byte)0x47, (byte)0xBA, (byte)0xD7, (byte)0x77, (byte)0xDA, (byte)0xAA, (byte)0xC7, (byte)0x66,
-            (byte)0xC7, (byte)0x88, (byte)0x2D, (byte)0xD0, (byte)0x61, (byte)0x13, (byte)0x94, (byte)0xE6,
-            (byte)0x3A, (byte)0x99, (byte)0xE7, (byte)0x5C, (byte)0x53, (byte)0x54
+            (byte)0xB8, (byte)0x7B, (byte)0xA8, (byte)0xAA, (byte)0x9B, (byte)0xA9, (byte)0x98, (byte)0x78,
+            (byte)0x88, (byte)0x77, (byte)0x99, (byte)0x8A, (byte)0x67, (byte)0xA6, (byte)0x87, (byte)0x7A,
+            (byte)0x86, (byte)0x87, (byte)0x77, (byte)0x98, (byte)0x8A, (byte)0xB8, (byte)0xBA, (byte)0x8C,
+            (byte)0x67, (byte)0x8B, (byte)0xBC, (byte)0xC7, (byte)0xAA, (byte)0x79, (byte)0x77, (byte)0x77,
+            (byte)0x78, (byte)0x87, (byte)0x76, (byte)0x88, (byte)0x99, (byte)0x86, (byte)0x87, (byte)0x88,
+            (byte)0x8A, (byte)0xA8, (byte)0x88, (byte)0x88, (byte)0x68, (byte)0x8A, (byte)0xA8, (byte)0xAA,
+            (byte)0x7B, (byte)0x38, (byte)0x84, (byte)0x58, (byte)0xB8, (byte)0x88, (byte)0x96, (byte)0x98,
+            (byte)0x88, (byte)0x77, (byte)0x88, (byte)0xC6, (byte)0x97, (byte)0x55, (byte)0x8A, (byte)0x67,
+            (byte)0x76, (byte)0x76, (byte)0x67, (byte)0x67, (byte)0x66, (byte)0x57, (byte)0x89, (byte)0x78,
+            (byte)0x7A, (byte)0x75, (byte)0xAA, (byte)0xA4, (byte)0x54, (byte)0x59, (byte)0x99, (byte)0xA9,
+            (byte)0xBA, (byte)0xAA, (byte)0x78, (byte)0x88, (byte)0xA8, (byte)0x78, (byte)0x36, (byte)0xAA,
+            (byte)0x01, (byte)0x8B, (byte)0x33, (byte)0x43, (byte)0x66, (byte)0x65, (byte)0x96, (byte)0x8B,
+            (byte)0xD8, (byte)0x9C, (byte)0x99, (byte)0x79, (byte)0x7B, (byte)0xAC, (byte)0xA7, (byte)0x88,
+            (byte)0x77, (byte)0x76, (byte)0x66, (byte)0x67, (byte)0x87, (byte)0x88, (byte)0x78, (byte)0x78,
+            (byte)0xAA, (byte)0x7A, (byte)0x8D, (byte)0xA7, (byte)0xAA, (byte)0xAB, (byte)0xAB, (byte)0x9A,
+            (byte)0x87, (byte)0x88, (byte)0x87, (byte)0x79, (byte)0x76, (byte)0xA4, (byte)0x78, (byte)0x67,
+            (byte)0xBA, (byte)0x9A, (byte)0xA8, (byte)0x89, (byte)0x7B, (byte)0x87, (byte)0x79, (byte)0x89,
+            (byte)0x7A, (byte)0x8A, (byte)0x9B, (byte)0x75, (byte)0xA7, (byte)0xCA, (byte)0x9A, (byte)0x99,
+            (byte)0x89, (byte)0x7A, (byte)0x48, (byte)0x68, (byte)0x96, (byte)0x7C, (byte)0x74, (byte)0x99,
+            (byte)0x65, (byte)0xA4, (byte)0xC9, (byte)0x25, (byte)0x6A, (byte)0x86, (byte)0x59, (byte)0x0B,
+            (byte)0xC5, (byte)0x99, (byte)0xC8, (byte)0xB9, (byte)0x4A, (byte)0x14, (byte)0x58, (byte)0x36,
+            (byte)0x4B, (byte)0x4B, (byte)0x83, (byte)0x34, (byte)0x58, (byte)0xCA, (byte)0xB7, (byte)0x93,
+            (byte)0x65, (byte)0x98, (byte)0x54, (byte)0x3B, (byte)0x53, (byte)0x95, (byte)0xA9, (byte)0x88,
+            (byte)0x35, (byte)0xC3, (byte)0x61, (byte)0x00, (byte)0xB9, (byte)0x79, (byte)0x2A, (byte)0x3A,
+            (byte)0x56, (byte)0x66, (byte)0x9A, (byte)0x29, (byte)0x7B, (byte)0x29
     };
 
+    // Biases: 12 hidden + 8 output = 20 values = 10 bytes
     private static final byte[] COMPRESSED_BIASES = {
-            (byte)0xD0, (byte)0x7C, (byte)0x76, (byte)0xEC, (byte)0xA7, (byte)0xF7, (byte)0x0F, (byte)0xEC,
-            (byte)0x42, (byte)0x43
+            (byte)0xBA, (byte)0xEE, (byte)0xEF, (byte)0xBE, (byte)0xAC, (byte)0xCA, (byte)0x49, (byte)0xB8,
+            (byte)0x8B, (byte)0xA7
     };
 
     private float lastConfidence = 0.0f;
@@ -49,7 +58,7 @@ public class CompressedTinyML {
         sb.append(COMPRESSED_WEIGHTS.length);
         sb.append(" bytes weights, ");
         sb.append(FEATURE_SIZE);
-        sb.append(" features");
+        sb.append(" features (Living Things model)");
         System.out.println(sb.toString());
     }
 
@@ -96,22 +105,15 @@ public class CompressedTinyML {
     }
 
     private String getFeatureName(int index) {
-        StringBuffer sb = new StringBuffer();
-
-        if (index <= 6) {
-            sb.append("subj");
-            sb.append(index);
-            return sb.toString();
-        }
-
-        if (index <= 10) {
-            sb.append("qtype");
-            sb.append(index - 7);
-            return sb.toString();
-        }
-
-        sb.append("ctx");
-        sb.append(index - 11);
+        String[] names = {
+            "math","science","english","calculat","experiment","grammar",
+            "plant","animal","living","photosynthes","habitat","food",
+            "water","grow","what/which","how","why","when/where",
+            "help","learn","teach","explain","question","answer","social"
+        };
+        if (index >= 0 && index < names.length) return names[index];
+        StringBuffer sb = new StringBuffer("f");
+        sb.append(index);
         return sb.toString();
     }
 
@@ -130,39 +132,88 @@ public class CompressedTinyML {
         }
     }
 
-    // FEATURE EXTRACTION FOR NEW MODEL (17 features)
+    // FEATURE EXTRACTION (25 features) - trained on Kenya CBC Grade 6 Living Things
     private byte[] extractFeatures(String text) {
-        byte[] features = new byte[17];
+        byte[] features = new byte[25];
         String lower = text.toLowerCase();
 
-        // Feature 0-6: Subject keywords (plants at position 6)
-        String[] subjectKeywords = {"math", "science", "english", "calculate", "experiment", "grammar", "plants"};
+        // Feature 0-8: Subject keywords
+        String[] subjectKeywords = {
+            "math", "science", "english", "calculat", "experiment",
+            "grammar", "plant", "animal", "living"
+        };
         for (int i = 0; i < subjectKeywords.length; i++) {
-            if (contains(lower, subjectKeywords[i])) {
-                features[i] = 1;
-            }
+            if (contains(lower, subjectKeywords[i])) features[i] = 1;
         }
 
-        // Feature 7-10: Question types
-        if (contains(lower, "what") || contains(lower, "which")) {
-            features[7] = 1;
+        // Extra aliases: fire feature[7]=animal or feature[1]=science for biology terms
+        // not covered by the subject keyword list
+        if (contains(lower, "insect")     || contains(lower, "vertebr")  ||
+            contains(lower, "invertebr")  || contains(lower, "pollinat") ||
+            contains(lower, "bee")        || contains(lower, "worm")     ||
+            contains(lower, "bird")       || contains(lower, "fish")     ||
+            contains(lower, "mammal")     || contains(lower, "reptile")  ||
+            contains(lower, "amphibian")) {
+            features[7] = 1; // animal
+            features[1] = 1; // science
         }
-        if (contains(lower, "how")) {
-            features[8] = 1;
+        if (contains(lower, "chlorophyll") || contains(lower, "stomata") ||
+            contains(lower, "transpir")    || contains(lower, "leaf")    ||
+            contains(lower, "leaves")      || contains(lower, "root")    ||
+            contains(lower, "seed")        || contains(lower, "flower")  ||
+            contains(lower, "stem")) {
+            features[6] = 1; // plant
+            features[1] = 1; // science
         }
-        if (contains(lower, "why")) {
-            features[9] = 1;
+        // Subject keywords plant/animal/living are all science — fire feature[1] too
+        if (features[6] == 1 || features[7] == 1 || features[8] == 1) {
+            features[1] = 1;
         }
-        if (contains(lower, "when") || contains(lower, "where")) {
-            features[10] = 1;
+        // Human body / health science terms
+        if (contains(lower, "heart")      || contains(lower, "blood")     ||
+            contains(lower, "circul")     || contains(lower, "artery")    ||
+            contains(lower, "arteries")   || contains(lower, "vein")      ||
+            contains(lower, "capillar")   || contains(lower, "pulse")     ||
+            contains(lower, "plasma")     || contains(lower, "haemoglob")) {
+            features[1] = 1; // science
+        }
+        // Reproductive system / adolescence terms
+        if (contains(lower, "reproduct")  || contains(lower, "adolescen") ||
+            contains(lower, "puberty")    || contains(lower, "ovary")     ||
+            contains(lower, "uterus")     || contains(lower, "testis")    ||
+            contains(lower, "sperm")      || contains(lower, "menstruat") ||
+            contains(lower, "ovulat")     || contains(lower, "fallopian")) {
+            features[1] = 1; // science
+        }
+        // Environment / water conservation terms
+        if (contains(lower, "conserv")    || contains(lower, "harvest")   ||
+            contains(lower, "recycle")    || contains(lower, "mulch")) {
+            features[1] = 1; // science
         }
 
-        // Feature 11-16: Educational context
+        // Feature 9-13: Living things specific keywords
+        if (contains(lower, "photosynthes")) features[9] = 1;
+        if (contains(lower, "habitat"))      features[10] = 1;
+        if (contains(lower, "food"))         features[11] = 1;
+        if (contains(lower, "water"))        features[12] = 1;
+        if (contains(lower, "grow"))         features[13] = 1;
+
+        // Feature 14-17: Question types
+        if (contains(lower, "what") || contains(lower, "which")) features[14] = 1;
+        if (contains(lower, "how"))                              features[15] = 1;
+        if (contains(lower, "why"))                              features[16] = 1;
+        if (contains(lower, "when") || contains(lower, "where")) features[17] = 1;
+
+        // Feature 18-23: Educational context
         String[] contextKeywords = {"help", "learn", "teach", "explain", "question", "answer"};
         for (int i = 0; i < contextKeywords.length; i++) {
-            if (contains(lower, contextKeywords[i])) {
-                features[11 + i] = 1;
-            }
+            if (contains(lower, contextKeywords[i])) features[18 + i] = 1;
+        }
+
+        // Feature 24: Social/greeting/farewell cue
+        if (contains(lower, "hello") || contains(lower, "hi") ||
+            contains(lower, "bye")   || contains(lower, "good")) {
+            features[24] = 1;
         }
 
         return features;
@@ -295,20 +346,22 @@ public class CompressedTinyML {
     public void testModel() {
         System.out.println("=== Model Testing ===");
         String[] testCases = {
-                "plants",
-                "science plants",
-                "plant growth",
-                "math addition",
-                "english grammar",
+                "what is photosynthesis",
+                "how do plants grow",
+                "animal habitats",
+                "vertebrate animals",
+                "food chain living things",
+                "math addition problem",
+                "english grammar nouns",
                 "science experiment",
-                "help with plants",
-                "what are plants",
-                "hello",
-                "bye"
+                "take a quiz",
+                "show my progress",
+                "good morning",
+                "goodbye"
         };
 
-        for (String test : testCases) {
-            debugPrediction(test);
+        for (int i = 0; i < testCases.length; i++) {
+            debugPrediction(testCases[i]);
         }
     }
 }

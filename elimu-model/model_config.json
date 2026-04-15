@@ -1,0 +1,39 @@
+{
+  "input_size": 16,
+  "hidden_size": 12,
+  "output_size": 8,
+  "total_weights": 288,
+  "total_biases": 20,
+  "weight_scaling": {
+    "input_hidden": {
+      "min": -1.1338520050048828,
+      "max": 1.3005214929580688
+    },
+    "hidden_output": {
+      "min": -1.3490886688232422,
+      "max": 1.1771143674850464
+    },
+    "hidden_biases": {
+      "min": 0.017946695908904076,
+      "max": 0.7115416526794434
+    },
+    "output_biases": {
+      "min": -0.447238951921463,
+      "max": 0.3149069547653198
+    }
+  },
+  "intents": {
+    "0": "math_help",
+    "1": "science_help",
+    "2": "english_help",
+    "3": "quiz",
+    "4": "general_help",
+    "5": "progress",
+    "6": "greeting",
+    "7": "farewell"
+  },
+  "accuracy": {
+    "training": 0.43171806167400884,
+    "test": 0.5263157894736842
+  }
+}
