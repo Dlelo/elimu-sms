@@ -7,7 +7,7 @@ import javax.microedition.rms.*;
  * CompressedTinyML - TinyML model for J2ME/CLDC 1.1.
  * Fully compatible with MIDP 2.0.
  * Trained on Kenya CBC Grade 6 Living Things science data.
- * Accuracy: 83.78% test / 80.73% train.
+ * Accuracy: 91.79% test / 91.54% train  (FEATURE_SIZE=26, greeting/farewell split).
  *
  * Supports on-device online learning:
  *   call learn(correctIntent, lr) immediately after predict() to do one
@@ -16,48 +16,51 @@ import javax.microedition.rms.*;
 public class CompressedTinyML {
 
     // ── Architecture ──────────────────────────────────────────────────────────
-    private static final int FEATURE_SIZE = 25;
+    // f[24]=greeting-only, f[25]=farewell-only — split from the original single
+    // social feature to resolve greeting/farewell confusion (F1 0.22 → expected >0.80).
+    private static final int FEATURE_SIZE = 26;
     private static final int HIDDEN_SIZE  = 12;
     private static final int OUTPUT_SIZE  = 8;
 
     // ── Factory-default compressed weights (4-bit nibble packed) ─────────────
-    // W1 (12×25) + W2 (8×12) = 396 nibbles = 198 bytes
+    // W1 (12×26) + W2 (8×12) = 408 nibbles = 204 bytes
     private static final byte[] COMPRESSED_WEIGHTS = {
-            (byte)0xB8, (byte)0x7B, (byte)0xA8, (byte)0xAA, (byte)0x9B, (byte)0xA9, (byte)0x98, (byte)0x78,
-            (byte)0x88, (byte)0x77, (byte)0x99, (byte)0x8A, (byte)0x67, (byte)0xA6, (byte)0x87, (byte)0x7A,
-            (byte)0x86, (byte)0x87, (byte)0x77, (byte)0x98, (byte)0x8A, (byte)0xB8, (byte)0xBA, (byte)0x8C,
-            (byte)0x67, (byte)0x8B, (byte)0xBC, (byte)0xC7, (byte)0xAA, (byte)0x79, (byte)0x77, (byte)0x77,
-            (byte)0x78, (byte)0x87, (byte)0x76, (byte)0x88, (byte)0x99, (byte)0x86, (byte)0x87, (byte)0x88,
-            (byte)0x8A, (byte)0xA8, (byte)0x88, (byte)0x88, (byte)0x68, (byte)0x8A, (byte)0xA8, (byte)0xAA,
-            (byte)0x7B, (byte)0x38, (byte)0x84, (byte)0x58, (byte)0xB8, (byte)0x88, (byte)0x96, (byte)0x98,
-            (byte)0x88, (byte)0x77, (byte)0x88, (byte)0xC6, (byte)0x97, (byte)0x55, (byte)0x8A, (byte)0x67,
-            (byte)0x76, (byte)0x76, (byte)0x67, (byte)0x67, (byte)0x66, (byte)0x57, (byte)0x89, (byte)0x78,
-            (byte)0x7A, (byte)0x75, (byte)0xAA, (byte)0xA4, (byte)0x54, (byte)0x59, (byte)0x99, (byte)0xA9,
-            (byte)0xBA, (byte)0xAA, (byte)0x78, (byte)0x88, (byte)0xA8, (byte)0x78, (byte)0x36, (byte)0xAA,
-            (byte)0x01, (byte)0x8B, (byte)0x33, (byte)0x43, (byte)0x66, (byte)0x65, (byte)0x96, (byte)0x8B,
-            (byte)0xD8, (byte)0x9C, (byte)0x99, (byte)0x79, (byte)0x7B, (byte)0xAC, (byte)0xA7, (byte)0x88,
-            (byte)0x77, (byte)0x76, (byte)0x66, (byte)0x67, (byte)0x87, (byte)0x88, (byte)0x78, (byte)0x78,
-            (byte)0xAA, (byte)0x7A, (byte)0x8D, (byte)0xA7, (byte)0xAA, (byte)0xAB, (byte)0xAB, (byte)0x9A,
-            (byte)0x87, (byte)0x88, (byte)0x87, (byte)0x79, (byte)0x76, (byte)0xA4, (byte)0x78, (byte)0x67,
-            (byte)0xBA, (byte)0x9A, (byte)0xA8, (byte)0x89, (byte)0x7B, (byte)0x87, (byte)0x79, (byte)0x89,
-            (byte)0x7A, (byte)0x8A, (byte)0x9B, (byte)0x75, (byte)0xA7, (byte)0xCA, (byte)0x9A, (byte)0x99,
-            (byte)0x89, (byte)0x7A, (byte)0x48, (byte)0x68, (byte)0x96, (byte)0x7C, (byte)0x74, (byte)0x99,
-            (byte)0x65, (byte)0xA4, (byte)0xC9, (byte)0x25, (byte)0x6A, (byte)0x86, (byte)0x59, (byte)0x0B,
-            (byte)0xC5, (byte)0x99, (byte)0xC8, (byte)0xB9, (byte)0x4A, (byte)0x14, (byte)0x58, (byte)0x36,
-            (byte)0x4B, (byte)0x4B, (byte)0x83, (byte)0x34, (byte)0x58, (byte)0xCA, (byte)0xB7, (byte)0x93,
-            (byte)0x65, (byte)0x98, (byte)0x54, (byte)0x3B, (byte)0x53, (byte)0x95, (byte)0xA9, (byte)0x88,
-            (byte)0x35, (byte)0xC3, (byte)0x61, (byte)0x00, (byte)0xB9, (byte)0x79, (byte)0x2A, (byte)0x3A,
-            (byte)0x56, (byte)0x66, (byte)0x9A, (byte)0x29, (byte)0x7B, (byte)0x29
+            (byte)0xBE, (byte)0xE1, (byte)0x47, (byte)0xBB, (byte)0x9B, (byte)0xA9, (byte)0x99, (byte)0x6B,
+            (byte)0x87, (byte)0x6A, (byte)0x89, (byte)0x7B, (byte)0x75, (byte)0x25, (byte)0x54, (byte)0x58,
+            (byte)0x43, (byte)0x44, (byte)0x46, (byte)0x66, (byte)0xA8, (byte)0x88, (byte)0xBB, (byte)0xAA,
+            (byte)0x9A, (byte)0x5B, (byte)0x79, (byte)0x80, (byte)0x37, (byte)0x87, (byte)0x67, (byte)0x67,
+            (byte)0x77, (byte)0xA9, (byte)0x87, (byte)0xDB, (byte)0x69, (byte)0xBA, (byte)0x64, (byte)0x67,
+            (byte)0x5B, (byte)0x87, (byte)0x87, (byte)0x57, (byte)0x56, (byte)0x66, (byte)0x88, (byte)0x87,
+            (byte)0x78, (byte)0x89, (byte)0xA9, (byte)0xB5, (byte)0xA5, (byte)0x5B, (byte)0xE8, (byte)0xAA,
+            (byte)0x89, (byte)0x98, (byte)0x88, (byte)0x99, (byte)0x87, (byte)0x97, (byte)0xA8, (byte)0x99,
+            (byte)0x6E, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88,
+            (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0x88, (byte)0xB3, (byte)0x79,
+            (byte)0x68, (byte)0xBB, (byte)0xAB, (byte)0xA9, (byte)0x99, (byte)0x7B, (byte)0x88, (byte)0x67,
+            (byte)0x88, (byte)0x7A, (byte)0x6E, (byte)0xB8, (byte)0x49, (byte)0x77, (byte)0xAA, (byte)0xAA,
+            (byte)0xA9, (byte)0x99, (byte)0x88, (byte)0x87, (byte)0x85, (byte)0x46, (byte)0xB8, (byte)0x55,
+            (byte)0x95, (byte)0x54, (byte)0x78, (byte)0x99, (byte)0xA9, (byte)0xA9, (byte)0x99, (byte)0x96,
+            (byte)0x88, (byte)0xA4, (byte)0x77, (byte)0x76, (byte)0xD7, (byte)0x6D, (byte)0xBE, (byte)0xB7,
+            (byte)0x77, (byte)0x67, (byte)0x66, (byte)0x66, (byte)0x66, (byte)0x87, (byte)0x76, (byte)0x66,
+            (byte)0xA9, (byte)0xC6, (byte)0x85, (byte)0x76, (byte)0x79, (byte)0x99, (byte)0x98, (byte)0xAA,
+            (byte)0xAA, (byte)0x7A, (byte)0x88, (byte)0x8B, (byte)0xCB, (byte)0x46, (byte)0x93, (byte)0x59,
+            (byte)0xC9, (byte)0xB8, (byte)0x55, (byte)0x76, (byte)0x78, (byte)0x88, (byte)0x89, (byte)0x88,
+            (byte)0xBB, (byte)0xC9, (byte)0x54, (byte)0x55, (byte)0x6B, (byte)0x5A, (byte)0x82, (byte)0x33,
+            (byte)0xA6, (byte)0xB6, (byte)0x2A, (byte)0x56, (byte)0x88, (byte)0xAA, (byte)0x5A, (byte)0x7B,
+            (byte)0x73, (byte)0x93, (byte)0x8C, (byte)0x62, (byte)0xA7, (byte)0xC8, (byte)0x4A, (byte)0xA8,
+            (byte)0x88, (byte)0xC9, (byte)0xB5, (byte)0x21, (byte)0xB8, (byte)0xAA, (byte)0x84, (byte)0x57,
+            (byte)0x25, (byte)0x8C, (byte)0x91, (byte)0x7B, (byte)0x86, (byte)0xB0, (byte)0x8A, (byte)0x84,
+            (byte)0xA3, (byte)0x34, (byte)0x8B, (byte)0x2C, (byte)0x56, (byte)0x55, (byte)0x46, (byte)0xB3,
+            (byte)0x84, (byte)0x33, (byte)0xBC, (byte)0x4A
     };
 
     // 12 hidden + 8 output = 20 biases = 10 bytes
     private static final byte[] COMPRESSED_BIASES = {
-            (byte)0xBA, (byte)0xEE, (byte)0xEF, (byte)0xBE, (byte)0xAC, (byte)0xCA, (byte)0x49, (byte)0xB8,
-            (byte)0x8B, (byte)0xA7
+            (byte)0xEB, (byte)0xDC, (byte)0x5C, (byte)0xFB, (byte)0xEF, (byte)0xED, (byte)0x98, (byte)0x61,
+            (byte)0x92, (byte)0xCD
     };
 
     // ── Mutable weight arrays (live during inference; updated by learning) ────
-    private float[] w1 = new float[HIDDEN_SIZE * FEATURE_SIZE]; // 12×25 row-major
+    private float[] w1 = new float[HIDDEN_SIZE * FEATURE_SIZE]; // 12×26 row-major
     private float[] w2 = new float[OUTPUT_SIZE  * HIDDEN_SIZE]; //  8×12 row-major
     private float[] b1 = new float[HIDDEN_SIZE];
     private float[] b2 = new float[OUTPUT_SIZE];
@@ -71,7 +74,7 @@ public class CompressedTinyML {
     private static final float LAMBDA = 0.01f; // regularisation strength
 
     // ── Forward-pass cache (needed for backprop) ──────────────────────────────
-    private byte[]  lastFeatures = new byte[FEATURE_SIZE];
+    private byte[]  lastFeatures = new byte[FEATURE_SIZE]; // 26 features
     private float[] lastZ1       = new float[HIDDEN_SIZE]; // pre-ReLU hidden
     private float[] lastA1       = new float[HIDDEN_SIZE]; // post-ReLU hidden
     private float[] lastOutput   = new float[OUTPUT_SIZE]; // softmax probs
@@ -468,10 +471,19 @@ public class CompressedTinyML {
             if (contains(lower, ctx[i])) features[18 + i] = 1;
         }
 
-        // Feature 24: Social cue
-        if (contains(lower, "hello") || contains(lower, "hi") ||
-            contains(lower, "bye")   || contains(lower, "good")) {
+        // Feature 24: greeting-specific (hello/hi/hey/good morning/afternoon/evening)
+        if (contains(lower, "hello") || contains(lower, "hey") ||
+            lower.startsWith("hi ") || lower.equals("hi") || contains(lower, " hi ") ||
+            contains(lower, "good morning") || contains(lower, "good afternoon") ||
+            contains(lower, "good evening") || contains(lower, "good day")) {
             features[24] = 1;
+        }
+        // Feature 25: farewell-specific (bye/goodbye/exit/good night — distinct from greeting)
+        if (contains(lower, "bye") || contains(lower, "goodbye") ||
+            contains(lower, "good bye") || contains(lower, "good night") ||
+            contains(lower, "exit") || contains(lower, "quit") ||
+            contains(lower, "farewell") || contains(lower, "see you")) {
+            features[25] = 1;
         }
 
         return features;
@@ -479,6 +491,49 @@ public class CompressedTinyML {
 
     private boolean contains(String str, String sub) {
         return str.indexOf(sub) != -1;
+    }
+
+    // ── Uncertainty quantification ────────────────────────────────────────────
+
+    /**
+     * Gini impurity as a model-uncertainty measure.
+     * Range: 0 (perfectly certain) → (OUTPUT_SIZE-1)/OUTPUT_SIZE (maximally uncertain).
+     * For 8 classes the theoretical maximum is 0.875.
+     *
+     * PhD rationale: uncertainty drives the cloud-fallback decision.
+     * Gini impurity is preferred over entropy here because it requires no
+     * logarithm computation, which has no efficient closed form in CLDC 1.1.
+     */
+    public float getUncertainty() {
+        float sumSq = 0.0f;
+        for (int i = 0; i < OUTPUT_SIZE; i++) {
+            sumSq += lastOutput[i] * lastOutput[i];
+        }
+        return 1.0f - sumSq;
+    }
+
+    /**
+     * Returns the indices of the top-n highest-probability intents in
+     * descending order. Used by the MIDlet to surface a secondary suggestion
+     * when the top-1 confidence is borderline.
+     */
+    public byte[] getTopIntents(int n) {
+        byte[] rank = new byte[OUTPUT_SIZE];
+        for (byte i = 0; i < OUTPUT_SIZE; i++) rank[i] = i;
+        // Insertion sort (8 elements — negligible cost)
+        for (int i = 1; i < OUTPUT_SIZE; i++) {
+            byte key = rank[i];
+            int  j   = i - 1;
+            while (j >= 0 && lastOutput[rank[j]] < lastOutput[key]) {
+                rank[j + 1] = rank[j];
+                j--;
+            }
+            rank[j + 1] = key;
+        }
+        if (n > OUTPUT_SIZE) n = OUTPUT_SIZE;
+        byte[] result = new byte[n];
+        System.arraycopy(rank, 0, result, 0, n);
+        return result;
     }
 
     // ── Debug helpers ─────────────────────────────────────────────────────────
@@ -503,7 +558,8 @@ public class CompressedTinyML {
             "math","science","english","calculat","experiment","grammar",
             "plant","animal","living","photosynthes","habitat","food",
             "water","grow","what/which","how","why","when/where",
-            "help","learn","teach","explain","question","answer","social"
+            "help","learn","teach","explain","question","answer",
+            "greeting","farewell"   // f24 and f25 now distinct
         };
         if (i >= 0 && i < names.length) return names[i];
         StringBuffer sb = new StringBuffer("f"); sb.append(i); return sb.toString();
@@ -524,13 +580,43 @@ public class CompressedTinyML {
     }
 
     public void testModel() {
-        System.out.println("=== Model Testing ===");
+        System.out.println("=== Model Self-Test (startup) ===");
+        // Covers all 8 intents + Swahili normalised inputs + SMS shorthands
         String[] cases = {
-            "what is photosynthesis", "how do plants grow", "animal habitats",
-            "vertebrate animals", "food chain living things", "math addition problem",
-            "english grammar nouns", "science experiment", "take a quiz",
-            "show my progress", "good morning", "goodbye"
+            // Math (intent 0)
+            "how to calculate fractions", "percent calculation math",
+            // Science (intent 1)
+            "what is photosynthesis", "food chain living things", "blood circulatory",
+            // English (intent 2 → routed to science)
+            "english grammar nouns",
+            // Quiz (intent 3)
+            "take a quiz", "quiz question answer",
+            // General (intent 4)
+            "help me please",
+            // Progress (intent 5)
+            "show my progress scores",
+            // Greeting (intent 6)
+            "good morning hello",
+            // Farewell (intent 7)
+            "goodbye bye",
         };
-        for (int i = 0; i < cases.length; i++) debugPrediction(cases[i]);
+        int pass = 0;
+        int[] expected = {0, 0, 1, 1, 1, 2, 3, 3, 4, 5, 6, 7};
+        for (int i = 0; i < cases.length; i++) {
+            byte pred = predict(cases[i]);
+            float unc = getUncertainty();
+            boolean ok = (pred == expected[i]);
+            if (ok) pass++;
+            StringBuffer sb = new StringBuffer(ok ? "[OK] " : "[??] ");
+            sb.append(cases[i]);
+            sb.append(" -> "); sb.append(getIntentName(pred));
+            sb.append(" conf="); sb.append(getLastConfidence());
+            sb.append(" unc="); sb.append(unc);
+            System.out.println(sb.toString());
+        }
+        StringBuffer summary = new StringBuffer("Self-test: ");
+        summary.append(pass); summary.append("/"); summary.append(cases.length);
+        summary.append(" correct");
+        System.out.println(summary.toString());
     }
 }

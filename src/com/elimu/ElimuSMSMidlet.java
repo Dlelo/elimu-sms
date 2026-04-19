@@ -601,6 +601,9 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     public void startApp() {
+        EvaluationLogger.load();
+        EvaluationLogger.newSession();
+        UserPreferences.loadSRS();
         initializeAI();
         showMainMenu();
     }
@@ -696,6 +699,7 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
 
             byte  intentId   = aiModel.predict(question);
             float confidence = aiModel.getLastConfidence();
+            EvaluationLogger.recordPrediction(intentId, confidence);
 
             dbg = new StringBuffer("Intent: ");
             dbg.append(intentId);
@@ -1147,8 +1151,9 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         boolean correct = (selected == ANSWERS[currentActualIdx]);
         if (correct) quizScore++;
 
-        // Record per-topic result
+        // Record per-topic result + SM-2 SRS update
         UserPreferences.recordTopicResult(QUESTION_TOPIC[currentActualIdx], correct);
+        UserPreferences.srsUpdate(QUESTION_TOPIC[currentActualIdx], correct ? 5 : 0);
 
         StringBuffer msg = new StringBuffer();
         if (correct) {
@@ -1266,8 +1271,25 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         }
 
         int weakest = UserPreferences.getWeakestTopic();
-        sb.append("\n\nFocus on: ");
+        sb.append("\n\nWeakest topic: ");
         sb.append(UserPreferences.getTopicName(weakest));
+
+        sb.append("\n\n=== Adaptive Review (SRS) ===");
+        for (int t = 0; t < 9; t++) {
+            sb.append("\n");
+            sb.append(UserPreferences.getTopicName(t));
+            sb.append(": ");
+            sb.append(UserPreferences.getSRSStatus(t));
+        }
+        int dueTopic = UserPreferences.getDueTopicForReview();
+        if (dueTopic >= 0) {
+            sb.append("\n-> Study now: ");
+            sb.append(UserPreferences.getTopicName(dueTopic));
+        }
+
+        sb.append("\n\n=== AI Analytics ===");
+        sb.append("\n"); sb.append(EvaluationLogger.getSummary());
+        sb.append("\nIntents: "); sb.append(EvaluationLogger.getIntentDistribution());
 
         showResponse(sb.toString(), "My Progress");
     }
@@ -1599,6 +1621,7 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         }
         int correctIntent = TOPIC_TO_INTENT[sel];
         aiModel.learn(correctIntent, LEARNING_RATE);
+        EvaluationLogger.recordLearnEvent();
         aiModel.saveWeights();
         showLearnedAlert();
     }
@@ -1611,5 +1634,8 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     public void pauseApp() {}
-    public void destroyApp(boolean unconditional) {}
+    public void destroyApp(boolean unconditional) {
+        EvaluationLogger.save();
+        UserPreferences.saveSRS();
+    }
 }

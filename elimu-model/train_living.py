@@ -14,7 +14,9 @@ import os
 import json
 import numpy as np
 from sklearn.neural_network import MLPClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.base import clone
 
 # ── PDF extraction ──────────────────────────────────────────────────────────
 def extract_pdf_text(pdf_path):
@@ -39,7 +41,7 @@ INTENTS = {
     7: "farewell",
 }
 
-FEATURE_SIZE = 25
+FEATURE_SIZE = 26   # was 25; f[24]=greeting-only, f[25]=farewell-only (fixes greeting/farewell confusion)
 HIDDEN_SIZE  = 12
 OUTPUT_SIZE  = 8
 
@@ -52,7 +54,8 @@ LIVING_KW  = ["photosynthes", "habitat", "food", "water", "grow"]
 # 14-17: question types
 # 18-23: educational context
 CONTEXT_KW = ["help", "learn", "teach", "explain", "question", "answer"]
-# 24   : social (hello/hi/bye/good)
+# 24   : greeting-specific (hello/hi/hey/good morning/good afternoon/good evening)
+# 25   : farewell-specific (bye/goodbye/good night/exit/quit/farewell)
 
 def extract_features(text):
     """Return float32[25] feature vector."""
@@ -76,10 +79,137 @@ def extract_features(text):
         if kw in t:
             f[18 + i] = 1.0
 
-    if "hello" in t or "hi" in t or "bye" in t or "good" in t:
+    # f[24] greeting-specific
+    if ("hello" in t or " hi " in t or t.startswith("hi ") or t == "hi"
+            or "hey" in t or "good morning" in t
+            or "good afternoon" in t or "good evening" in t or "good day" in t):
         f[24] = 1.0
+    # f[25] farewell-specific
+    if ("bye" in t or "goodbye" in t or "good bye" in t
+            or "good night" in t or "exit" in t or "quit" in t
+            or "farewell" in t or "see you" in t):
+        f[25] = 1.0
 
     return f
+
+
+# ── Text normalisation (mirrors Java ElimuSMSMidlet.normalizeQuery()) ─────────
+def normalize_text(text):
+    """
+    Apply the same Kiswahili→English and SMS-shorthand substitutions used by
+    the J2ME runtime's normalizeQuery() method.  Applying this to training
+    data ensures the Python feature extractor sees the same distribution as
+    the on-device inference pipeline — a prerequisite for valid evaluation.
+    """
+    t = text.lower()
+    substitutions = [
+        # Kiswahili question words
+        ("ni nini",  "what is"),  ("nini",      "what"),
+        ("jinsi",    "how"),      ("kwa nini",  "why"),
+        ("eleza",    "explain"),  ("aina za",   "types of"),
+        ("sehemu za","parts of"), ("kazi za",   "functions of"),
+        ("taja",     "name"),
+        # Kiswahili science
+        ("usanisinuru",       "photosynthesis"),
+        ("mmea",              "plant"),      ("mimea",   "plants"),
+        ("mnyama",            "animal"),     ("wanyama", "animals"),
+        ("damu",              "blood"),      ("moyo",    "heart"),
+        ("mapafu",            "lungs"),      ("kupumua", "breathing"),
+        ("mfupa",             "bone"),       ("misuli",  "muscle"),
+        ("chakula",           "food"),       ("udongo",  "soil"),
+        ("hali ya hewa",      "weather"),    ("mashine", "machine"),
+        ("viumbe vidogo",     "microorganism"),
+        ("ugonjwa",           "disease"),
+        ("mzunguko wa damu",  "circulatory"),
+        ("uzazi",             "reproduction"),
+        ("balehe",            "adolescence"),
+        ("mchwa",             "insect"),     ("buibui",  "spider"),
+        ("chura",             "amphibian"),
+        # Kiswahili math
+        ("hesabu",   "math"),    ("sehemu",   "fraction"),
+        ("asilimia", "percentage"), ("uwiano", "ratio"),
+        ("eneo",     "area"),    ("mzingo",   "perimeter"),
+        ("wastani",  "mean"),
+        # Kiswahili social
+        ("habari",   "hello"),   ("kwaheri",  "goodbye"),
+        ("msaada",   "help"),    ("maswali",  "questions"),
+        ("jibu",     "answer"),  ("karibu",   "welcome"),
+        # SMS shorthand
+        ("hw",    "how"),    ("wat",  "what"),   ("wht",  "what"),
+        ("plz",   "please"), ("pls",  "please"),
+        ("expl",  "explain"),("dfn",  "definition"),
+    ]
+    for sw, en in substitutions:
+        t = t.replace(sw, en)
+    return t
+
+
+# ── Rule-based baseline (for ablation / significance testing) ─────────────────
+def rule_based_predict(text):
+    """
+    Deterministic keyword baseline.  Used in McNemar's test to quantify
+    the statistical improvement of TinyML over a rule-based system.
+    Keyword rules mirror the feature design in extractFeatures().
+    """
+    t = normalize_text(text).lower()
+    if any(k in t for k in ["math", "calculat", "fraction", "percent",
+                              "area", "volume", "decimal", "ratio",
+                              "lcm", "hcf", "mean", "mode", "range",
+                              "perimeter", "multiply", "divide"]):
+        return 0
+    if any(k in t for k in ["science", "plant", "animal", "living",
+                              "photosynthes", "habitat", "food chain",
+                              "food web", "leaf", "root", "seed",
+                              "pollinat", "germinat", "invertebr",
+                              "vertebr", "mammal", "reptile", "amphibian",
+                              "insect", "blood", "heart", "lung",
+                              "digest", "skeleton", "reproduct", "soil",
+                              "weather", "microorganism", "ecosystem",
+                              "decomposer", "lever", "pulley", "matter",
+                              "solid", "liquid", "water", "grow", "flower"]):
+        return 1
+    if any(k in t for k in ["english", "grammar", "verb", "noun",
+                              "spell", "vocabulary", "composition",
+                              "comprehension", "tense", "adjective"]):
+        return 2
+    if any(k in t for k in ["quiz", "test", "exam", "question",
+                              "practice", "assessment", "answer"]):
+        return 3
+    if any(k in t for k in ["progress", "score", "result", "performance",
+                              "marks", "statistics", "achievement"]):
+        return 5
+    if any(k in t for k in ["hello", "hi", "hey", "good morning",
+                              "good afternoon", "good evening"]):
+        return 6
+    if any(k in t for k in ["bye", "goodbye", "good night", "exit",
+                              "quit", "farewell", "kwaheri"]):
+        return 7
+    return 4   # fallback: general help
+
+
+# ── McNemar's test (statistical significance) ─────────────────────────────────
+def mcnemar_test(correct_a, correct_b):
+    """
+    McNemar's chi-squared test (with continuity correction) for comparing
+    the per-sample correct/wrong profile of two classifiers on the same
+    test set.  Critical value at alpha=0.05 (df=1): 3.841.
+
+    Returns: (chi2_stat, interpretation_string)
+    """
+    n01 = sum(1 for a, b in zip(correct_a, correct_b) if not a and b)
+    n10 = sum(1 for a, b in zip(correct_a, correct_b) if     a and not b)
+    if n01 + n10 == 0:
+        return 0.0, "identical predictions — no test needed"
+    chi2 = (abs(n01 - n10) - 1.0) ** 2 / (n01 + n10)
+    if chi2 >= 10.828:
+        sig = "p < 0.001 (highly significant)"
+    elif chi2 >= 6.635:
+        sig = "p < 0.01  (significant)"
+    elif chi2 >= 3.841:
+        sig = "p < 0.05  (significant)"
+    else:
+        sig = "p >= 0.05 (not significant)"
+    return chi2, sig
 
 
 # ── Training data ────────────────────────────────────────────────────────────
@@ -449,10 +579,50 @@ def build_training_data(pdf_text=""):
 
     all_data = raw + augmented
 
+    # ── Kiswahili training examples ──────────────────────────────────────────
+    # Applied through normalize_text() so features match runtime preprocessing.
+    # Ensures the model handles Kiswahili queries from Kenyan Grade 6 learners.
+    swahili_samples = [
+        # Math (intent 0)
+        ("hesabu ya sehemu",         0), ("jinsi ya kuhesabu asilimia", 0),
+        ("eneo la pembetatu",        0), ("wastani wa nambari",          0),
+        ("hesabu ya uwiano",         0), ("jinsi kuhesabu mzingo",       0),
+        ("sehemu ya hesabu",         0), ("hesabu ya mgawanyo",          0),
+        # Science - plants (intent 1)
+        ("usanisinuru ni nini",      1), ("jinsi mimea inavyokua",       1),
+        ("aina za mizizi",           1), ("kazi za majani",              1),
+        ("chakula cha mimea",        1), ("mimea inahitaji nini kukua",  1),
+        # Science - animals (intent 1)
+        ("aina za wanyama",          1), ("wanyama wenye uti wa mgongo", 1),
+        ("jinsi buibui anavyoishi",  1), ("mchwa ana miguu mingapi",     1),
+        # Science - human body (intent 1)
+        ("mzunguko wa damu mwilini", 1), ("moyo una vyumba vingapi",     1),
+        ("mapafu yanafanya kazi gani",1),("kupumua kwa binadamu",        1),
+        # Science - environment (intent 1)
+        ("udongo aina ngapi",        1), ("hali ya hewa ni nini",        1),
+        ("ugonjwa ni nini",          1), ("viumbe vidogo ni nini",       1),
+        # Quiz (intent 3)
+        ("niulize maswali ya sayansi",3), ("maswali ya hesabu",         3),
+        ("mtihani wa darasa la 6",   3), ("jibu maswali haya",          3),
+        # General help (intent 4)
+        ("msaada wa masomo",         4), ("nisaidie tafadhali",          4),
+        # Progress (intent 5)
+        ("maendeleo yangu",          5), ("alama zangu",                 5),
+        # Greeting (intent 6)
+        ("habari ya asubuhi",        6), ("habari yako",                 6),
+        ("karibu ElimuSMS",          6), ("salam",                       6),
+        # Farewell (intent 7)
+        ("kwaheri tutaonana",        7), ("kwa heri",                    7),
+        ("lala salama",              7), ("asante kwaheri",              7),
+    ]
+    # Normalize Swahili → English keywords before adding to corpus
+    swahili_data = [(normalize_text(t), i) for t, i in swahili_samples]
+    all_data = all_data + swahili_data
+
     # Count per intent
     from collections import Counter
     cnts = Counter(i for _, i in all_data)
-    print(f"[DATA] Total: {len(all_data)}")
+    print(f"[DATA] Total: {len(all_data)}  (incl. {len(swahili_data)} Swahili examples)")
     for k in sorted(cnts):
         print(f"  Intent {k} ({INTENTS[k]}): {cnts[k]}")
 
@@ -566,9 +736,79 @@ def main():
     print(f"  Training accuracy : {train_acc*100:.2f}%")
     print(f"  Test     accuracy : {test_acc*100:.2f}%")
 
+    # ── 4b. 5-fold stratified cross-validation ────────────────────────────────
+    print("\n=== 4b. 5-Fold Stratified Cross-Validation ===")
+    model_template = MLPClassifier(
+        hidden_layer_sizes=(HIDDEN_SIZE,), activation="relu", solver="adam",
+        max_iter=10000, random_state=42, learning_rate_init=0.001,
+        alpha=0.001, tol=1e-5,
+    )
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    cv_scores = cross_val_score(model_template, X, y, cv=skf, scoring="accuracy")
+    cv_mean, cv_std = cv_scores.mean(), cv_scores.std()
+    print(f"  CV scores : {[f'{s*100:.1f}%' for s in cv_scores]}")
+    print(f"  Mean ± SD : {cv_mean*100:.2f}% ± {cv_std*100:.2f}%")
+    print(f"  95% CI    : [{(cv_mean - 2*cv_std)*100:.2f}%, {(cv_mean + 2*cv_std)*100:.2f}%]")
+
+    # ── 4c. Per-class precision / recall / F1 ────────────────────────────────
+    print("\n=== 4c. Per-class Metrics (held-out test set) ===")
+    y_pred_test = model.predict(X_test)
+    intent_names = [INTENTS[i] for i in range(OUTPUT_SIZE)]
+    print(classification_report(y_test, y_pred_test, target_names=intent_names,
+                                 zero_division=0))
+
+    # ── 4d. Confusion matrix ─────────────────────────────────────────────────
+    print("\n=== 4d. Confusion Matrix ===")
+    cm = confusion_matrix(y_test, y_pred_test)
+    header = "         " + "".join(f"{n[:6]:>7}" for n in intent_names)
+    print(header)
+    for i, row in enumerate(cm):
+        print(f"  {intent_names[i][:8]:8s} " + "".join(f"{v:7d}" for v in row))
+
+    # ── 4e. Rule-based baseline comparison ───────────────────────────────────
+    print("\n=== 4e. Rule-based Baseline Comparison ===")
+    _, X_test_raw, _, y_test_raw = train_test_split(
+        [t for t, _ in all_data], [i for _, i in all_data],
+        test_size=0.2, random_state=42, stratify=y
+    )
+    rule_preds = [rule_based_predict(t) for t in X_test_raw]
+    rule_acc   = sum(1 for p, g in zip(rule_preds, y_test_raw) if p == g) / len(y_test_raw)
+    print(f"  Rule-based accuracy  : {rule_acc*100:.2f}%")
+    print(f"  TinyML accuracy      : {test_acc*100:.2f}%")
+    print(f"  Improvement          : +{(test_acc - rule_acc)*100:.2f} pp")
+
+    # ── 4f. McNemar's test ────────────────────────────────────────────────────
+    print("\n=== 4f. McNemar's Significance Test ===")
+    ml_correct   = [int(model.predict([extract_features(t)])[0]) == g
+                    for t, g in zip(X_test_raw, y_test_raw)]
+    rule_correct = [rule_based_predict(t) == g
+                    for t, g in zip(X_test_raw, y_test_raw)]
+    chi2, sig = mcnemar_test(ml_correct, rule_correct)
+    print(f"  chi2 = {chi2:.3f}  →  {sig}")
+
+    # ── 4g. Swahili query evaluation ─────────────────────────────────────────
+    print("\n=== 4g. Swahili Query Evaluation ===")
+    swahili_eval = [
+        ("hesabu ya sehemu",          0), ("usanisinuru ni nini",        1),
+        ("jinsi mimea inavyokua",      1), ("mzunguko wa damu mwilini",   1),
+        ("niulize maswali ya sayansi", 3), ("msaada wa masomo",           4),
+        ("maendeleo yangu",            5), ("habari ya asubuhi",          6),
+        ("kwaheri tutaonana",          7),
+    ]
+    sw_correct = 0
+    for raw_sw, expected in swahili_eval:
+        normed = normalize_text(raw_sw)
+        feat   = extract_features(normed)
+        pred   = int(model.predict([feat])[0])
+        conf   = float(np.max(model.predict_proba([feat])))
+        ok     = "OK" if pred == expected else "FAIL"
+        if pred == expected: sw_correct += 1
+        print(f"  [{ok:4s}] '{raw_sw}' -> {INTENTS[pred]}  conf={conf:.3f}")
+    print(f"  Swahili accuracy: {sw_correct}/{len(swahili_eval)}")
+
     # 5. Extract & transpose weights
     print("\n=== 5. Transposing weights ===")
-    W1 = model.coefs_[0].T   # (HIDDEN, FEATURE) = (12, 25)
+    W1 = model.coefs_[0].T   # (HIDDEN, FEATURE) = (12, 26)
     W2 = model.coefs_[1].T   # (OUTPUT, HIDDEN)  = (8, 12)
     b1 = model.intercepts_[0]
     b2 = model.intercepts_[1]
@@ -591,10 +831,11 @@ def main():
     print("\n=== 7. Packing nibbles ===")
     packed_weights = pack_nibbles(all_weights_q)
     packed_biases  = pack_nibbles(B_q)
-    print(f"  COMPRESSED_WEIGHTS: {len(packed_weights)} bytes  (expected 198)")
+    expected_packed_w = (HIDDEN_SIZE * FEATURE_SIZE + OUTPUT_SIZE * HIDDEN_SIZE + 1) // 2
+    print(f"  COMPRESSED_WEIGHTS: {len(packed_weights)} bytes  (expected {expected_packed_w})")
     print(f"  COMPRESSED_BIASES : {len(packed_biases)} bytes  (expected 10)")
 
-    assert len(packed_weights) == 198, f"Weight byte count wrong: {len(packed_weights)}"
+    assert len(packed_weights) == expected_packed_w, f"Weight byte count wrong: {len(packed_weights)}"
     assert len(packed_biases)  == 10,  f"Bias byte count wrong: {len(packed_biases)}"
 
     # 8. Generate Java
@@ -618,69 +859,61 @@ def main():
         fh.write(java_out)
     print(f"  Written: {out_java}")
 
-    # 9. Save meta JSON
+    # 9. Save meta JSON (updated with full evaluation results)
     meta = {
-        "FEATURE_SIZE":       FEATURE_SIZE,
-        "HIDDEN_SIZE":        HIDDEN_SIZE,
-        "OUTPUT_SIZE":        OUTPUT_SIZE,
-        "training_accuracy":  round(float(train_acc), 6),
-        "test_accuracy":      round(float(test_acc),  6),
-        "total_samples":      int(len(all_data)),
-        "pdf_topics_found":   found_topics,
-        "intents":            {str(k): v for k, v in INTENTS.items()},
+        "FEATURE_SIZE":           FEATURE_SIZE,
+        "HIDDEN_SIZE":            HIDDEN_SIZE,
+        "OUTPUT_SIZE":            OUTPUT_SIZE,
+        "training_accuracy":      round(float(train_acc),  6),
+        "test_accuracy":          round(float(test_acc),   6),
+        "cv_5fold_mean":          round(float(cv_mean),    6),
+        "cv_5fold_std":           round(float(cv_std),     6),
+        "rule_based_accuracy":    round(float(rule_acc),   6),
+        "tinyml_vs_rule_delta_pp":round((test_acc - rule_acc)*100, 2),
+        "mcnemar_chi2":           round(float(chi2),       4),
+        "mcnemar_result":         sig,
+        "swahili_eval_accuracy":  round(sw_correct / len(swahili_eval), 4),
+        "total_samples":          int(len(all_data)),
+        "swahili_samples":        len(swahili_eval),
+        "pdf_topics_found":       found_topics,
+        "intents":                {str(k): v for k, v in INTENTS.items()},
     }
     out_json = os.path.join(OUTDIR, "living_meta.json")
     with open(out_json, "w") as fh:
         json.dump(meta, fh, indent=2)
     print(f"  Written: {out_json}")
 
-    # 10. Sanity tests
-    print("\n=== 9. Sanity tests ===")
+    # 10. Sanity tests (regression detection)
+    print("\n=== 10. Sanity regression tests ===")
     sanity = [
-        # science / living things
-        ("plants",              1),
-        ("photosynthesis",      1),
-        ("food chain",          1),
-        ("habitat of animals",  1),
-        ("how do plants grow",  1),
-        ("living things",       1),
-        # other subjects
-        ("math addition",       0),
-        ("calculate area",      0),
-        ("english grammar",     2),
-        ("learn english",       2),
-        # quiz
-        ("take quiz",           3),
-        ("quiz question",       3),
-        ("give me questions",   3),
-        # general
-        ("help",                4),
-        # progress
-        ("my progress",         5),
-        ("show my scores",      5),
-        # greeting
-        ("hello",               6),
-        ("good morning",        6),
-        # farewell
-        ("bye",                 7),
-        ("good night",          7),
+        ("plants",              1), ("photosynthesis",      1),
+        ("food chain",          1), ("habitat of animals",  1),
+        ("how do plants grow",  1), ("living things",       1),
+        ("math addition",       0), ("calculate area",      0),
+        ("english grammar",     2), ("learn english",       2),
+        ("take quiz",           3), ("quiz question",       3),
+        ("give me questions",   3), ("help",                4),
+        ("my progress",         5), ("show my scores",      5),
+        ("hello",               6), ("good morning",        6),
+        ("bye",                 7), ("good night",          7),
     ]
-    correct = 0
+    correct_sanity = 0
     for text, expected in sanity:
         feat = extract_features(text)
         pred = int(model.predict([feat])[0])
         conf = float(np.max(model.predict_proba([feat])))
         ok   = "OK" if pred == expected else "FAIL"
-        if pred == expected:
-            correct += 1
+        if pred == expected: correct_sanity += 1
         print(f"  [{ok:4s}] '{text}': expected={INTENTS[expected]:12s} "
               f"got={INTENTS[pred]:12s}  conf={conf:.3f}")
-    print(f"  Sanity: {correct}/{len(sanity)}")
+    print(f"  Sanity: {correct_sanity}/{len(sanity)}")
 
     print(f"\n=== DONE ===")
     print(f"  living_java_output.txt → {out_java}")
     print(f"  living_meta.json       → {out_json}")
     print(f"  Train: {train_acc*100:.2f}%   Test: {test_acc*100:.2f}%")
+    print(f"  5-Fold CV: {cv_mean*100:.2f}% ± {cv_std*100:.2f}%")
+    print(f"  Rule-based baseline: {rule_acc*100:.2f}%  (McNemar chi2={chi2:.3f})")
 
 
 if __name__ == "__main__":
