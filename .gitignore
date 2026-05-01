@@ -1,0 +1,30 @@
+# Papers and drafts (kept local; published artefacts go elsewhere)
+paper/
+papers/
+*.pdf
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
+# Build outputs
+build/
+out/
+classes/
+
+# Java compile arg dumps
+javac.*.args
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

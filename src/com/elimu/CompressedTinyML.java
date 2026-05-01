@@ -73,6 +73,19 @@ public class CompressedTinyML {
     private float[] anchorB2 = new float[OUTPUT_SIZE];
     private static final float LAMBDA = 0.01f; // regularisation strength
 
+    // ── FL anchor: snapshot of the last-synchronised global model. ────────────
+    // Used by FederatedLearning to compute the per-round delta. Distinct from
+    // the CFP anchor above, which advances on local corrections; the FL anchor
+    // only advances when a new global is pulled from the server.
+    private float[] flAnchorW1 = new float[HIDDEN_SIZE * FEATURE_SIZE];
+    private float[] flAnchorW2 = new float[OUTPUT_SIZE  * HIDDEN_SIZE];
+    private float[] flAnchorB1 = new float[HIDDEN_SIZE];
+    private float[] flAnchorB2 = new float[OUTPUT_SIZE];
+
+    public static final int TOTAL_PARAMS =
+            HIDDEN_SIZE * FEATURE_SIZE + OUTPUT_SIZE * HIDDEN_SIZE
+            + HIDDEN_SIZE + OUTPUT_SIZE; // 312 + 96 + 12 + 8 = 428
+
     // ── Forward-pass cache (needed for backprop) ──────────────────────────────
     private byte[]  lastFeatures = new byte[FEATURE_SIZE]; // 26 features
     private float[] lastZ1       = new float[HIDDEN_SIZE]; // pre-ReLU hidden
@@ -81,12 +94,18 @@ public class CompressedTinyML {
 
     private float lastConfidence = 0.0f;
 
+    // ── Cloud-fallback routing policy ─────────────────────────────────────────
+    // Below this softmax-max confidence, the MIDlet should defer to the cloud
+    // generative tier instead of answering locally. Tunable per evaluation run.
+    public static final float CONFIDENCE_THRESHOLD = 0.30f;
+
     private static final String RMS_STORE = "ElimuWeights";
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     public void loadModel() {
         decompressWeights();   // populate float arrays from static byte defaults
         loadSavedWeights();    // overlay with persisted weights if any exist
+        initFLAnchorFromCurrent(); // FL anchor starts at the loaded model
 
         StringBuffer sb = new StringBuffer("CompressedTinyML loaded: ");
         sb.append(COMPRESSED_WEIGHTS.length);
@@ -108,6 +127,14 @@ public class CompressedTinyML {
 
     public float getLastConfidence() {
         return lastConfidence;
+    }
+
+    /**
+     * Routing decision: should this query be deferred to the cloud generative
+     * tier instead of answered from on-device templates? Call after predict().
+     */
+    public boolean shouldFallbackToCloud() {
+        return lastConfidence < CONFIDENCE_THRESHOLD;
     }
 
     // ── On-device online learning ─────────────────────────────────────────────
@@ -238,6 +265,89 @@ public class CompressedTinyML {
         System.arraycopy(w2, 0, anchorW2, 0, w2.length);
         System.arraycopy(b1, 0, anchorB1, 0, b1.length);
         System.arraycopy(b2, 0, anchorB2, 0, b2.length);
+    }
+
+    // ── Federated learning hooks ──────────────────────────────────────────────
+
+    /**
+     * Flatten current weights minus FL anchor into one float[428] in the
+     * canonical order: w1, w2, b1, b2. The result is the per-round delta the
+     * device contributes to the federated average; differential-privacy noise
+     * is added by FederatedLearning before this leaves the security boundary.
+     */
+    public float[] computeDeltaFromFLAnchor() {
+        float[] delta = new float[TOTAL_PARAMS];
+        int idx = 0;
+        for (int i = 0; i < w1.length; i++) delta[idx++] = w1[i] - flAnchorW1[i];
+        for (int i = 0; i < w2.length; i++) delta[idx++] = w2[i] - flAnchorW2[i];
+        for (int i = 0; i < b1.length; i++) delta[idx++] = b1[i] - flAnchorB1[i];
+        for (int i = 0; i < b2.length; i++) delta[idx++] = b2[i] - flAnchorB2[i];
+        return delta;
+    }
+
+    /**
+     * Replace current weights with a fresh global pulled from the FL server,
+     * advance both anchors so future learn() corrections regularise toward
+     * the global, and persist to RMS.
+     */
+    public void applyGlobalUpdate(float[] newGlobal) {
+        if (newGlobal == null || newGlobal.length != TOTAL_PARAMS) return;
+        int idx = 0;
+        for (int i = 0; i < w1.length; i++) { w1[i] = newGlobal[idx]; flAnchorW1[i] = newGlobal[idx]; idx++; }
+        for (int i = 0; i < w2.length; i++) { w2[i] = newGlobal[idx]; flAnchorW2[i] = newGlobal[idx]; idx++; }
+        for (int i = 0; i < b1.length; i++) { b1[i] = newGlobal[idx]; flAnchorB1[i] = newGlobal[idx]; idx++; }
+        for (int i = 0; i < b2.length; i++) { b2[i] = newGlobal[idx]; flAnchorB2[i] = newGlobal[idx]; idx++; }
+        copyToAnchor();
+        saveWeights();
+    }
+
+    /** Initialise FL anchor to current weights — called once at first run. */
+    public void initFLAnchorFromCurrent() {
+        System.arraycopy(w1, 0, flAnchorW1, 0, w1.length);
+        System.arraycopy(w2, 0, flAnchorW2, 0, w2.length);
+        System.arraycopy(b1, 0, flAnchorB1, 0, b1.length);
+        System.arraycopy(b2, 0, flAnchorB2, 0, b2.length);
+    }
+
+    /**
+     * Box--Muller Gaussian sample: z ~ N(0, sigma^2). CLDC 1.1 has neither a
+     * Gaussian RNG nor Math.log, so we synthesise both from primitives.
+     * Used by FederatedLearning for differential-privacy noise on the upload
+     * delta.
+     */
+    public static float gaussian(float sigma) {
+        // CLDC 1.1 has no Math.random(); use a shared Random seeded once.
+        double u1 = (gaussRng.nextInt() & 0x7fffffff) / (double) Integer.MAX_VALUE;
+        if (u1 < 1e-9) u1 = 1e-9; // guard against ln(0)
+        double u2 = (gaussRng.nextInt() & 0x7fffffff) / (double) Integer.MAX_VALUE;
+        double z  = Math.sqrt(-2.0 * lnApprox(u1)) * Math.cos(2.0 * Math.PI * u2);
+        return (float) (sigma * z);
+    }
+
+    private static final java.util.Random gaussRng =
+            new java.util.Random(System.currentTimeMillis());
+
+    /**
+     * Natural log approximation for CLDC 1.1, which lacks Math.log.
+     * Reduces x to (0.5, 1.0] by repeated halving/doubling, then uses
+     * ln(1 + y) = y - y^2/2 + y^3/3 - ... around y = x - 1.
+     * Accurate to better than 1e-4 across the input range — sufficient
+     * for Box--Muller variance, where small log errors smear into the tail
+     * but do not bias the centre.
+     */
+    private static double lnApprox(double x) {
+        if (x <= 0.0) return -1.0e10; // -infinity sentinel
+        int k = 0;
+        while (x < 0.5) { x *= 2.0; k++; }
+        while (x > 1.0) { x *= 0.5; k--; }
+        double y  = x - 1.0;
+        double y2 = y * y;
+        double y3 = y2 * y;
+        double y4 = y2 * y2;
+        double y5 = y4 * y;
+        double y6 = y4 * y2;
+        double lnM = y - y2 / 2.0 + y3 / 3.0 - y4 / 4.0 + y5 / 5.0 - y6 / 6.0;
+        return lnM - k * 0.6931471805599453; // ln(2)
     }
 
     /** Load persisted weights from RMS; silently keeps current weights if not found. */

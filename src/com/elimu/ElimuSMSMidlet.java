@@ -24,16 +24,18 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     private Command backCmd   = new Command("Back",   Command.BACK,   2);
     private Command exitCmd   = new Command("Exit",   Command.EXIT,   3);
     private Command okCmd     = new Command("OK",     Command.OK,     1);
-    private Command wrongCmd  = new Command("Wrong?", Command.SCREEN, 2);
+    private Command moreCmd   = new Command("More",   Command.SCREEN, 2);
 
-    // ── Learning feedback ────────────────────────────────────────────────────
-    private List topicPickerList;
-    private static final String[] TOPIC_LABELS  = {
-        "Math", "Science / Plants / Animals", "Quiz", "Progress", "Greeting", "Other"
-    };
-    private static final int[] TOPIC_TO_INTENT = { 0, 1, 3, 5, 6, 4 };
-    private static final float LEARNING_RATE = 0.05f;
-    private int lastSuccessfulIntent = -1; // -1 = no context yet
+    // ── "More" tier walk state ───────────────────────────────────────────────
+    // Each on-screen response remembers the question + intent that produced it.
+    // Tapping "More" walks outward: tap 1 tries the cloud (deeper answer when
+    // online; broader CBC-level overview when offline); tap 2+ cycles through
+    // related-keyword siblings inside the same intent (offline only).
+    private String lastQuestion = null;
+    private int    lastIntent   = -1;
+    private int    moreLevel    = 0;
+    private int    relatedCursor = 0;
+    private int    lastSuccessfulIntent = -1; // -1 = no context yet
 
     // ── Quiz state ───────────────────────────────────────────────────────────
     private int quizIndex = 0;
@@ -604,7 +606,15 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         EvaluationLogger.load();
         EvaluationLogger.newSession();
         UserPreferences.loadSRS();
+        SMSManager.setCloudUrl(getAppProperty("Elimu-CloudURL"));
+        FederatedLearning.configure(
+                getAppProperty("Elimu-FLEnabled"),
+                getAppProperty("Elimu-CloudURL"));
         initializeAI();
+        // Opportunistic global pull: silent on offline, applies new global if online.
+        if (FederatedLearning.isEnabled()) {
+            FederatedLearning.pullGlobalOpportunistic(aiModel);
+        }
         showMainMenu();
     }
 
@@ -650,10 +660,8 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             handleQuizSubmit();
         } else if (c == okCmd) {
             display.setCurrent(mainMenu);
-        } else if (c == wrongCmd) {
-            showTopicPicker();
-        } else if (c == selectCmd && d == topicPickerList) {
-            handleFeedbackSelection();
+        } else if (c == moreCmd) {
+            handleMore();
         } else if (c == selectCmd && d == quizTypeList) {
             startQuiz(quizTypeList.getSelectedIndex()); // 0=Math, 1=Science
         } else if (c == backCmd) {
@@ -701,13 +709,21 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             float confidence = aiModel.getLastConfidence();
             EvaluationLogger.recordPrediction(intentId, confidence);
 
+            // Track state for the "More" tier walk: a fresh question resets
+            // the cursor so subsequent "More" taps start from the top.
+            lastQuestion  = question;
+            lastIntent    = intentId;
+            moreLevel     = 0;
+            relatedCursor = 0;
+
             dbg = new StringBuffer("Intent: ");
             dbg.append(intentId);
             dbg.append("  Confidence: ");
             dbg.append(confidence);
             System.out.println(dbg.toString());
 
-            if (confidence > 0.3f) {
+            boolean answeredLocally = true;
+            if (!aiModel.shouldFallbackToCloud()) {
                 // Update session context: track math/science topic; clear on greeting/farewell
                 if (intentId == 0 || intentId == 1) {
                     lastSuccessfulIntent = intentId;
@@ -719,11 +735,11 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
                     case 1: handleScienceQuestion(question); break;
                     case 2: handleScienceQuestion(question); break; // was English - route to science
                     case 3: showQuizTypePicker();            break;
-                    case 4: handleLowConfidence(question);   break;
+                    case 4: answeredLocally = handleLowConfidence(question); break;
                     case 5: showProgress();                  break;
                     case 6: showResponse("Hello! Ask me about math or science.", "Hi!"); break;
                     case 7: showResponse("Goodbye! Keep learning STEM!", "Bye!"); break;
-                    default: handleLowConfidence(question);  break;
+                    default: answeredLocally = handleLowConfidence(question); break;
                 }
             } else if (intentId == 0 && isMathQuery(question)) {
                 // Classifier agrees it's math; keyword confirms it — route at low confidence
@@ -734,9 +750,9 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
                 lastSuccessfulIntent = 1;
                 handleScienceQuestion(question);
             } else {
-                handleLowConfidence(question);
+                answeredLocally = handleLowConfidence(question);
             }
-            UserPreferences.incrementLocalAnswers();
+            if (answeredLocally) UserPreferences.incrementLocalAnswers();
         } catch (Exception e) {
             showError("Oops! Something went wrong. Try a different question.");
         }
@@ -1056,13 +1072,43 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     // ── Low confidence fallback ───────────────────────────────────────────────
-    private void handleLowConfidence(String question) {
+    /**
+     * Returns true if answered on-device, false if dispatched to cloud.
+     * Caller uses the return value to keep local/cloud answer counters consistent.
+     */
+    private boolean handleLowConfidence(String question) {
         if (question.indexOf('+') >= 0 || question.indexOf('-') >= 0
                 || question.indexOf('*') >= 0 || question.indexOf('/') >= 0) {
             showResponse(evaluateMathExpression(question), "Math");
-            return;
+            return true;
         }
-        showResponse("I can help with Math and Science.\nTry: 'photosynthesis', 'digestive system', 'lever', 'states of matter', 'loam soil', '5*4', 'fraction', 'LCM'", "STEM Assistant");
+        askCloud(question);
+        return false;
+    }
+
+    private void askCloud(final String question) {
+        Alert waiting = new Alert("Cloud");
+        waiting.setString("Asking the cloud AI...");
+        waiting.setTimeout(Alert.FOREVER);
+        display.setCurrent(waiting);
+
+        SMSManager.sendToCloudAI(question, new CloudResponseListener() {
+            public void onResponse(final String answer) {
+                display.callSerially(new Runnable() {
+                    public void run() { showResponse(answer, "Cloud Answer"); }
+                });
+            }
+            public void onError(final String reason) {
+                display.callSerially(new Runnable() {
+                    public void run() {
+                        showResponse(
+                            "Cloud unreachable. I can help with Math and Science.\n"
+                            + "Try: 'photosynthesis', 'fraction', 'LCM', '5*4'.",
+                            "Offline");
+                    }
+                });
+            }
+        });
     }
 
     // ── LCG random number generator ──────────────────────────────────────────
@@ -1590,40 +1636,73 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         alert.setTimeout(Alert.FOREVER);
         alert.removeCommand(Alert.DISMISS_COMMAND);
         alert.addCommand(okCmd);
-        alert.addCommand(wrongCmd);
+        alert.addCommand(moreCmd);
         alert.setCommandListener(this);
         display.setCurrent(alert);
     }
 
-    private void showLearnedAlert() {
-        Alert alert = new Alert("Learned!");
-        alert.setString("Got it! I'll remember that.");
-        alert.setTimeout(2000);
-        display.setCurrent(alert, mainMenu);
-    }
-
-    private void showTopicPicker() {
-        topicPickerList = new List("What was it about?", Choice.IMPLICIT);
-        for (int i = 0; i < TOPIC_LABELS.length; i++) {
-            topicPickerList.append(TOPIC_LABELS[i], null);
-        }
-        topicPickerList.addCommand(selectCmd);
-        topicPickerList.addCommand(backCmd);
-        topicPickerList.setCommandListener(this);
-        display.setCurrent(topicPickerList);
-    }
-
-    private void handleFeedbackSelection() {
-        int sel = topicPickerList.getSelectedIndex();
-        if (sel < 0 || sel >= TOPIC_TO_INTENT.length) {
+    /**
+     * Handle a "More" tap. Progressive concentric circles:
+     *   moreLevel == 1: try the cloud LLM for a deeper answer; on offline
+     *                   error, surface the intent-level overview from
+     *                   MicroResponses (broader CBC frame for the same topic).
+     *   moreLevel >= 2: walk through MicroResponses.relatedFor(intent), each
+     *                   tap re-routing through the intent handler with the
+     *                   next sibling keyword. Surfaces related concepts in
+     *                   the same CBC topic web.
+     *   exhausted:      friendly "ask online for more depth" message.
+     */
+    private void handleMore() {
+        if (lastQuestion == null) {
             display.setCurrent(mainMenu);
             return;
         }
-        int correctIntent = TOPIC_TO_INTENT[sel];
-        aiModel.learn(correctIntent, LEARNING_RATE);
-        EvaluationLogger.recordLearnEvent();
-        aiModel.saveWeights();
-        showLearnedAlert();
+        moreLevel++;
+        if (moreLevel == 1) {
+            askCloudWithBroaderFallback(lastQuestion, lastIntent);
+            return;
+        }
+        String[] related = MicroResponses.relatedFor(lastIntent);
+        if (related == null || relatedCursor >= related.length) {
+            showResponse(
+                "I have shown you everything I can offline.\n"
+                + "Ask this when you are online for a deeper answer.",
+                "More");
+            return;
+        }
+        String keyword = related[relatedCursor++];
+        if (lastIntent == 0) {
+            handleMathQuestion(keyword);
+        } else {
+            handleScienceQuestion(keyword);
+        }
+    }
+
+    /**
+     * First-tier "More" behaviour: try the cloud, and on cloud error fall
+     * back to the intent-level CBC overview (broader frame for the same
+     * topic) instead of the generic STEM menu.
+     */
+    private void askCloudWithBroaderFallback(final String question, final int intent) {
+        Alert waiting = new Alert("Cloud");
+        waiting.setString("Asking the cloud AI...");
+        waiting.setTimeout(Alert.FOREVER);
+        display.setCurrent(waiting);
+
+        SMSManager.sendToCloudAI(question, new CloudResponseListener() {
+            public void onResponse(final String answer) {
+                display.callSerially(new Runnable() {
+                    public void run() { showResponse(answer, "Cloud Answer"); }
+                });
+            }
+            public void onError(final String reason) {
+                display.callSerially(new Runnable() {
+                    public void run() {
+                        showResponse(MicroResponses.getResponse(intent), "More");
+                    }
+                });
+            }
+        });
     }
 
     private void showError(String message) {
@@ -1635,6 +1714,11 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
 
     public void pauseApp() {}
     public void destroyApp(boolean unconditional) {
+        // Generation phase of the FL round runs entirely offline:
+        // compute delta, add DP noise, quantise, enqueue. No network call.
+        if (FederatedLearning.isEnabled() && aiModel != null) {
+            FederatedLearning.enqueueDelta(aiModel);
+        }
         EvaluationLogger.save();
         UserPreferences.saveSRS();
     }

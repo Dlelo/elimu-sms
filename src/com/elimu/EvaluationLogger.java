@@ -29,6 +29,11 @@ public class EvaluationLogger {
     private static int   confidenceSum100 = 0;  // sum of (confidence * 100) cast to int
     private static int[] intentPredCount  = new int[NUM_INTENTS];
 
+    // FL counters (persist to RMS) — H_5 survival-analysis inputs
+    private static int   flEnqueues = 0; // deltas computed + queued at destroyApp
+    private static int   flFlushes  = 0; // queued blobs successfully POSTed
+    private static int   flPulls    = 0; // global model fetches
+
     // ── Session events ────────────────────────────────────────────────────────
 
     /** Call once at the start of each MIDlet session. */
@@ -59,6 +64,15 @@ public class EvaluationLogger {
     public static void recordCloudQuery() {
         cloudQueries++;
     }
+
+    /** FL: a noisy delta has been queued at destroyApp(). */
+    public static void recordFLEnqueue() { flEnqueues++; }
+
+    /** FL: a queued delta has been successfully POSTed to the server. */
+    public static void recordFLFlush() { flFlushes++; }
+
+    /** FL: a fresh global model has been pulled from the server. */
+    public static void recordFLPull() { flPulls++; }
 
     // ── Reporting ────────────────────────────────────────────────────────────
 

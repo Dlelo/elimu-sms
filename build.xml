@@ -48,6 +48,8 @@
                 <attribute name="MIDlet-1" value="ElimuSMS, , com.elimu.ElimuSMSMidlet"/>
                 <attribute name="MicroEdition-Configuration" value="CLDC-1.1"/>
                 <attribute name="MicroEdition-Profile" value="MIDP-2.0"/>
+                <attribute name="Elimu-CloudURL" value="http://api.elimu-ai.org/v1/query"/>
+                <attribute name="Elimu-FLEnabled" value="false"/>
             </manifest>
         </jar>
 
@@ -62,6 +64,8 @@
             MIDlet-Jar-Size: ${jar.size}
             MicroEdition-Configuration: CLDC-1.1
             MicroEdition-Profile: MIDP-2.0
+            Elimu-CloudURL: http://api.elimu-ai.org/v1/query
+            Elimu-FLEnabled: false
         </echo>
 
         <echo>✅ Build completed successfully!</echo>

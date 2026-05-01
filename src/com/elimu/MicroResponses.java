@@ -131,4 +131,43 @@ public class MicroResponses {
         }
         return getResponse(4); // general help
     }
+
+    // ── "More" tier walk: related keywords per intent ────────────────────────
+    // When the student taps "More" while offline, the MIDlet re-routes through
+    // the intent handler with the next keyword in this list as the question
+    // seed. Each tap surfaces a sibling concept in the same CBC topic web,
+    // walking the student outward into broader context.
+    //
+    // Keywords are chosen to hit distinct branches of handleMathQuestion()
+    // and handleScienceQuestion(), so each tap returns a different micro-lesson.
+    private static final String[][] RELATED_KEYWORDS = {
+        // 0 math_help
+        { "fractions", "lcm", "hcf", "percent", "ratio", "decimal",
+          "area triangle", "perimeter", "volume", "mean" },
+        // 1 science_help
+        { "photosynthesis", "chlorophyll", "vertebrate", "circulatory",
+          "soil", "states of matter", "digestive", "respiration",
+          "simple machines", "food chain" },
+        // 2 english_help (routed to science handler in the MIDlet)
+        { "photosynthesis", "vertebrate", "soil", "states of matter",
+          "digestive", "simple machines" },
+        // 3 quiz — handled separately by the quiz UI, but a few prompts help
+        { "math quiz", "science quiz" },
+        // 4 general_help — broaden into the two main subject menus
+        { "fractions", "photosynthesis", "lcm", "vertebrate", "soil",
+          "percent", "states of matter" },
+        // 5 progress — nothing useful offline; "More" naturally exhausts
+        { },
+        // 6 greeting — nothing useful offline
+        { },
+        // 7 farewell — nothing useful offline
+        { },
+    };
+
+    /** Return the related-keyword list for an intent, or null if none. */
+    public static String[] relatedFor(int intentId) {
+        if (intentId < 0 || intentId >= RELATED_KEYWORDS.length) return null;
+        String[] list = RELATED_KEYWORDS[intentId];
+        return (list != null && list.length > 0) ? list : null;
+    }
 }

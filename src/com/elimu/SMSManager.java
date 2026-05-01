@@ -8,6 +8,8 @@ import java.io.*;
  *
  * When the on-device TinyML model has insufficient confidence, questions are
  * forwarded to a cloud AI backend via HTTP POST (MIDP 2.0 HttpConnection).
+ * The response body is read and delivered to a CloudResponseListener so the
+ * MIDlet can surface the cloud-generated answer back to the learner.
  *
  * Design rationale:
  *  - HTTP POST over TCP is used instead of raw SMS (JSR-120) because it
@@ -16,6 +18,8 @@ import java.io.*;
  *  - Background Thread prevents UI blocking; CLDC 1.1 supports java.lang.Thread.
  *  - Retry with exponential backoff handles spotty rural GPRS connectivity.
  *  - URL encoding is implemented without java.net.URLEncoder (not in CLDC 1.1).
+ *  - Listener callbacks fire on the worker thread; UI code must marshal back
+ *    via Display.callSerially.
  *
  * PhD relevance: the cloud/local split ratio (tracked by EvaluationLogger) is
  * a key metric for evaluating the on-device model's coverage and confidence
@@ -23,19 +27,36 @@ import java.io.*;
  */
 public class SMSManager {
 
-    private static final String CLOUD_API   = "http://api.elimu-ai.org/v1/query";
+    private static final String DEFAULT_CLOUD_API = "http://api.elimu-ai.org/v1/query";
     private static final int    MAX_RETRIES = 3;
+    private static final int    READ_BUF    = 256;
+    // Cap response payload to avoid OOM on constrained heaps.
+    private static final int    MAX_RESPONSE_BYTES = 4096;
+
+    // Mutable so deployments can point at a different backend (Gemini / Groq /
+    // Ollama / OpenRouter) by setting the JAD attribute Elimu-CloudURL — see
+    // ElimuSMSMidlet.startApp(). Falls back to DEFAULT_CLOUD_API if unset.
+    private static String cloudApi = DEFAULT_CLOUD_API;
+
+    /** Override the cloud endpoint at startup from a JAD attribute. */
+    public static void setCloudUrl(String url) {
+        if (url != null && url.length() > 0) {
+            cloudApi = url;
+        }
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
-     * Asynchronously dispatch question to the cloud AI backend.
-     * Returns immediately; network I/O happens on a background thread.
+     * Asynchronously dispatch a question to the cloud AI backend and deliver
+     * the generated answer (or an error reason) to the listener. Returns
+     * immediately; network I/O happens on a background thread.
      */
-    public static void sendToCloudAI(final String question) {
+    public static void sendToCloudAI(final String question,
+                                     final CloudResponseListener listener) {
         Thread worker = new Thread() {
             public void run() {
-                dispatchToCloud(question);
+                dispatchToCloud(question, listener);
             }
         };
         worker.start();
@@ -45,13 +66,15 @@ public class SMSManager {
 
     // ── Network dispatch ──────────────────────────────────────────────────────
 
-    private static void dispatchToCloud(String question) {
+    private static void dispatchToCloud(String question,
+                                        CloudResponseListener listener) {
+        String lastError = "no attempts made";
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             HttpConnection conn = null;
             OutputStream   os   = null;
             InputStream    is   = null;
             try {
-                conn = (HttpConnection) Connector.open(CLOUD_API);
+                conn = (HttpConnection) Connector.open(cloudApi);
                 conn.setRequestMethod(HttpConnection.POST);
                 conn.setRequestProperty("Content-Type",
                         "application/x-www-form-urlencoded");
@@ -71,11 +94,25 @@ public class SMSManager {
                 log.append(status);
                 log.append(" (attempt "); log.append(attempt); log.append(")");
                 System.out.println(log.toString());
-                if (status == HttpConnection.HTTP_OK) return;
+
+                if (status == HttpConnection.HTTP_OK) {
+                    is = conn.openInputStream();
+                    String answer = readResponse(is);
+                    if (listener != null) listener.onResponse(answer);
+                    // Opportunistic FL flush — the network is already warm,
+                    // so any pending DP-noisy deltas piggy-back on this burst.
+                    FederatedLearning.flushPendingOpportunistic();
+                    return;
+                }
+                StringBuffer es = new StringBuffer("HTTP ");
+                es.append(status);
+                lastError = es.toString();
 
             } catch (Exception e) {
+                lastError = e.getMessage();
                 StringBuffer err = new StringBuffer("[Cloud] attempt ");
-                err.append(attempt); err.append(" failed: "); err.append(e.getMessage());
+                err.append(attempt); err.append(" failed: ");
+                err.append(lastError == null ? "unknown" : lastError);
                 System.out.println(err.toString());
             } finally {
                 if (os   != null) { try { os.close();   } catch (Exception ig) {} }
@@ -90,6 +127,24 @@ public class SMSManager {
             }
         }
         System.out.println("[Cloud] failed after " + MAX_RETRIES + " attempts.");
+        if (listener != null) listener.onError(lastError);
+    }
+
+    /** Read response body up to MAX_RESPONSE_BYTES, decoded as UTF-8. */
+    private static String readResponse(InputStream is) throws IOException {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] chunk = new byte[READ_BUF];
+        int total = 0;
+        int n;
+        while ((n = is.read(chunk)) != -1) {
+            int allowed = MAX_RESPONSE_BYTES - total;
+            if (allowed <= 0) break;
+            int toWrite = (n < allowed) ? n : allowed;
+            buf.write(chunk, 0, toWrite);
+            total += toWrite;
+            if (total >= MAX_RESPONSE_BYTES) break;
+        }
+        return new String(buf.toByteArray(), "UTF-8");
     }
 
     // ── Payload builder ───────────────────────────────────────────────────────
