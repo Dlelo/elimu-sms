@@ -1,0 +1,74 @@
+# CI pipeline for ElimuSMS / STEMEdge3310.
+#
+# Two jobs run in parallel on every push and PR:
+#
+#   1. j2me-compile — verifies the J2ME MIDlet compiles against the
+#      CLDC 1.1 / MIDP 2.0 bootclasspath. Catches the kind of regression
+#      we hit several times during this iteration (StringBuilder usage
+#      in source 1.8 mode, Math.log not in CLDC 1.1, Random.nextBytes
+#      not in CLDC 1.1, reflection not in CLDC 1.1). These are silent
+#      build failures on real handsets but loud on a CI server.
+#
+#   2. cloud-tests — runs the property-based fuzz suite for the FL wire
+#      format and aggregators (cloud-server/tests/). Includes the
+#      hypothesis-driven nibble round-trip and classifier stability
+#      tests that exercise hundreds of random inputs per run.
+#
+# Anything red here blocks merge.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  j2me-compile:
+    name: J2ME compile (CLDC 1.1 / MIDP 2.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+
+      - name: Compile against CLDC 1.1 bootclasspath
+        run: |
+          mkdir -p build/classes
+          javac -source 1.8 -target 1.8 \
+            -bootclasspath lib/cldcapi11-2.0.2.jar \
+            -classpath    lib/midpapi20.jar \
+            -d build/classes \
+            src/com/elimu/*.java
+
+      - name: Verify class output
+        run: ls -la build/classes/com/elimu/ | head -25
+
+  cloud-tests:
+    name: Cloud server tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: cloud-server/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest hypothesis
+
+      - name: Run property + unit tests
+        run: pytest tests/ -v

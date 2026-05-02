@@ -34,6 +34,13 @@ public class EvaluationLogger {
     private static int   flFlushes  = 0; // queued blobs successfully POSTed
     private static int   flPulls    = 0; // global model fetches
 
+    // NASA-TLX cognitive-load survey responses (H_4 mediator).
+    // Each session yields up to one (6-int) record appended to tlxHistory.
+    // Stored in-memory for the session and not yet persisted across runs;
+    // the per-session aggregate is the analysis unit.
+    private static int   tlxSessionsRecorded = 0;
+    private static int[] tlxSumByDim = new int[6]; // running sum per dimension
+
     // ── Session events ────────────────────────────────────────────────────────
 
     /** Call once at the start of each MIDlet session. */
@@ -73,6 +80,96 @@ public class EvaluationLogger {
 
     /** FL: a fresh global model has been pulled from the server. */
     public static void recordFLPull() { flPulls++; }
+
+    /**
+     * Record a completed NASA-TLX response. `scores` is 6 integers,
+     * each in [1, 5], in the canonical TLXSurvey dimension order.
+     */
+    public static void recordTLX(int[] scores) {
+        if (scores == null || scores.length != 6) return;
+        for (int i = 0; i < 6; i++) {
+            int s = scores[i];
+            if (s < 1) s = 1;
+            if (s > 5) s = 5;
+            tlxSumByDim[i] += s;
+        }
+        tlxSessionsRecorded++;
+    }
+
+    /** Mean per-dimension TLX score across all recorded sessions. */
+    public static float[] getTLXMeans() {
+        float[] means = new float[6];
+        if (tlxSessionsRecorded == 0) return means;
+        for (int i = 0; i < 6; i++) {
+            means[i] = tlxSumByDim[i] / (float) tlxSessionsRecorded;
+        }
+        return means;
+    }
+
+    public static int getTLXResponseCount() { return tlxSessionsRecorded; }
+
+    /**
+     * Compact teacher-readable report. Designed to fit one phone screen
+     * (~8 lines, <300 chars) and answer "how is this learner doing?" at
+     * a glance during weekly SD-card pickup. Includes:
+     *   - questions asked, cloud rate, mean confidence
+     *   - top-3 intents the learner cared about
+     *   - FL participation (rounds enqueued / pulled)
+     *   - average cognitive load (NASA-TLX) if any responses recorded
+     */
+    public static String getThisWeekReport() {
+        StringBuffer sb = new StringBuffer("=== This Week ===\n");
+        sb.append("Questions: ");   sb.append(totalQueries);
+        if (totalQueries > 0) {
+            int pctCloud = (cloudQueries * 100) / totalQueries;
+            int avgConf  = confidenceSum100 / totalQueries;
+            sb.append(" (");        sb.append(pctCloud);
+            sb.append("% cloud, conf "); sb.append(avgConf); sb.append("%)");
+        }
+        sb.append("\nTop topics: "); sb.append(topThreeIntentsString());
+        sb.append("\nFL: enq=");     sb.append(flEnqueues);
+        sb.append(" flush=");        sb.append(flFlushes);
+        sb.append(" pulls=");        sb.append(flPulls);
+        if (tlxSessionsRecorded > 0) {
+            float[] tlx = getTLXMeans();
+            float total = 0;
+            for (int i = 0; i < tlx.length; i++) total += tlx[i];
+            int avg10 = (int)((total / tlx.length) * 10);
+            sb.append("\nLoad (NASA-TLX): ");
+            sb.append(avg10 / 10); sb.append("."); sb.append(avg10 % 10);
+            sb.append("/5  (n=");  sb.append(tlxSessionsRecorded);
+            sb.append(")");
+        }
+        return sb.toString();
+    }
+
+    private static String topThreeIntentsString() {
+        String[] names = {"math","sci","eng","quiz","help","prog","hi","bye"};
+        // Insertion-sort indices 0..7 by descending intentPredCount
+        int[] order = new int[NUM_INTENTS];
+        for (int i = 0; i < NUM_INTENTS; i++) order[i] = i;
+        for (int i = 1; i < NUM_INTENTS; i++) {
+            int key = order[i];
+            int j   = i - 1;
+            while (j >= 0 && intentPredCount[order[j]] < intentPredCount[key]) {
+                order[j + 1] = order[j];
+                j--;
+            }
+            order[j + 1] = key;
+        }
+        StringBuffer sb = new StringBuffer();
+        int shown = 0;
+        for (int k = 0; k < NUM_INTENTS && shown < 3; k++) {
+            int id = order[k];
+            if (intentPredCount[id] == 0) break;
+            if (shown > 0) sb.append(", ");
+            sb.append(names[id]); sb.append("(");
+            sb.append(intentPredCount[id]); sb.append(")");
+            shown++;
+        }
+        if (shown == 0) sb.append("none yet");
+        return sb.toString();
+    }
 
     // ── Reporting ────────────────────────────────────────────────────────────
 

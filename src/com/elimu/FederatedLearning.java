@@ -150,10 +150,28 @@ public class FederatedLearning {
                     rs.deleteRecord(id);
                     continue;
                 }
-                if (postBlob(uploadUrl, blob)) {
-                    rs.deleteRecord(id);
-                    EvaluationLogger.recordFLFlush();
+                // SMS-primary, HTTPS-secondary. Each branch records its
+                // own EvaluationLogger.recordFLFlush() on success.
+                // SMSFederated.* may throw NoClassDefFoundError on
+                // emulators without JSR-120; treat that as "SMS path
+                // unavailable" and fall through to HTTPS.
+                boolean delivered = false;
+                try {
+                    if (SMSFederated.isEnabled() && SMSFederated.sendDelta(blob)) {
+                        delivered = true;
+                    }
+                } catch (Throwable t) {
+                    // WMA missing at runtime — silently degrade to HTTPS.
                 }
+                if (!delivered && postBlob(uploadUrl, blob)) {
+                    EvaluationLogger.recordFLFlush();
+                    delivered = true;
+                }
+                if (delivered) {
+                    rs.deleteRecord(id);
+                }
+                // If neither transport succeeded the blob stays queued
+                // for the next flush attempt.
             }
             en.destroy();
         } catch (Throwable t) {

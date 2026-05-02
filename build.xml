@@ -27,7 +27,7 @@
                source="1.8"
                target="1.8"
                bootclasspath="lib/cldcapi11-2.0.2.jar"
-               classpath="lib/midpapi20.jar"
+               classpath="lib/midpapi20.jar:lib/wma20-stubs.jar"
                debug="false"
                includeAntRuntime="false"
                failonerror="true"
@@ -50,23 +50,31 @@
                 <attribute name="MicroEdition-Profile" value="MIDP-2.0"/>
                 <attribute name="Elimu-CloudURL" value="http://api.elimu-ai.org/v1/query"/>
                 <attribute name="Elimu-FLEnabled" value="false"/>
+                <attribute name="Elimu-Lang" value="en"/>
+                <!-- Optional: add Elimu-FLShortcode with a non-empty value
+                     to enable SMS-primary federated learning. JAD/manifest
+                     parsers reject empty values, so we omit it by default. -->
+                <!-- <attribute name="Elimu-FLShortcode" value="+254700000000"/> -->
             </manifest>
         </jar>
 
-        <!-- Create JAD file -->
+        <!-- Create JAD file. JAD parsers (MicroEmulator, Java ME SDK,
+             real handsets) reject lines that don't start at column 0,
+             so we write the file via <concat> with explicit \n line
+             separators rather than the indenting <echo> task. -->
         <length file="${dist.dir}/ElimuSMS.jar" property="jar.size"/>
-        <echo file="${dist.dir}/ElimuSMS.jad">
-            MIDlet-Name: ElimuSMS
-            MIDlet-Version: 1.0.0
-            MIDlet-Vendor: Elimu
-            MIDlet-1: ElimuSMS, , com.elimu.ElimuSMSMidlet
-            MIDlet-Jar-URL: ElimuSMS.jar
-            MIDlet-Jar-Size: ${jar.size}
-            MicroEdition-Configuration: CLDC-1.1
-            MicroEdition-Profile: MIDP-2.0
-            Elimu-CloudURL: http://api.elimu-ai.org/v1/query
-            Elimu-FLEnabled: false
-        </echo>
+        <concat destfile="${dist.dir}/ElimuSMS.jad" force="yes">MIDlet-Name: ElimuSMS
+MIDlet-Version: 1.0.0
+MIDlet-Vendor: Elimu
+MIDlet-1: ElimuSMS, , com.elimu.ElimuSMSMidlet
+MIDlet-Jar-URL: ElimuSMS.jar
+MIDlet-Jar-Size: ${jar.size}
+MicroEdition-Configuration: CLDC-1.1
+MicroEdition-Profile: MIDP-2.0
+Elimu-CloudURL: http://api.elimu-ai.org/v1/query
+Elimu-FLEnabled: false
+Elimu-Lang: en
+</concat>
 
         <echo>✅ Build completed successfully!</echo>
     </target>

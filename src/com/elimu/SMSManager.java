@@ -45,6 +45,55 @@ public class SMSManager {
         }
     }
 
+    // ── Conversation memory (rolling 3-turn context) ─────────────────────────
+    // The cloud LLM benefits from knowing what the student asked just before;
+    // a follow-up like "and what about chlorophyll?" is meaningless without
+    // the prior turn. We maintain a tiny in-memory ring of the last
+    // CONTEXT_TURNS questions and ship them alongside the current query.
+    // No assistant replies are buffered (we don't store cloud answers
+    // verbatim) — only the student's own prior questions, which they
+    // already typed. So this adds no new privacy concern.
+    private static final int CONTEXT_TURNS = 3;
+    private static final int CONTEXT_MAX_CHARS = 480; // hard cap on payload bloat
+    private static final String[] convBuffer = new String[CONTEXT_TURNS];
+    private static int convCount = 0;
+
+    /** Append a question to the rolling context buffer. */
+    public static void pushContext(String question) {
+        if (question == null || question.length() == 0) return;
+        // Shift older turns toward index 0; freshest at the end.
+        for (int i = 0; i < CONTEXT_TURNS - 1; i++) {
+            convBuffer[i] = convBuffer[i + 1];
+        }
+        convBuffer[CONTEXT_TURNS - 1] = question;
+        if (convCount < CONTEXT_TURNS) convCount++;
+    }
+
+    /** Reset the buffer (e.g., after greeting/farewell intent). */
+    public static void clearContext() {
+        for (int i = 0; i < CONTEXT_TURNS; i++) convBuffer[i] = null;
+        convCount = 0;
+    }
+
+    /** Build the context preamble; "" if no prior turns. */
+    private static String getContextString() {
+        if (convCount <= 1) return "";
+        StringBuffer sb = new StringBuffer();
+        // Include all prior turns except the last (which is the current question).
+        int start = CONTEXT_TURNS - convCount;
+        int stop  = CONTEXT_TURNS - 1; // exclude the most recent (== current)
+        for (int i = start; i < stop; i++) {
+            if (convBuffer[i] == null) continue;
+            if (sb.length() > 0) sb.append(" | ");
+            sb.append(convBuffer[i]);
+            if (sb.length() >= CONTEXT_MAX_CHARS) break;
+        }
+        if (sb.length() > CONTEXT_MAX_CHARS) {
+            sb.setLength(CONTEXT_MAX_CHARS);
+        }
+        return sb.toString();
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
@@ -98,7 +147,8 @@ public class SMSManager {
                 if (status == HttpConnection.HTTP_OK) {
                     is = conn.openInputStream();
                     String answer = readResponse(is);
-                    if (listener != null) listener.onResponse(answer);
+                    String intent = conn.getHeaderField("X-Elimu-Intent");
+                    if (listener != null) listener.onResponse(answer, intent);
                     // Opportunistic FL flush — the network is already warm,
                     // so any pending DP-noisy deltas piggy-back on this burst.
                     FederatedLearning.flushPendingOpportunistic();
@@ -153,6 +203,11 @@ public class SMSManager {
         StringBuffer sb = new StringBuffer("q=");
         sb.append(urlEncode(question));
         sb.append("&grade=6&lang=sw-ke");
+        String ctx = getContextString();
+        if (ctx.length() > 0) {
+            sb.append("&ctx=");
+            sb.append(urlEncode(ctx));
+        }
         return sb.toString();
     }
 

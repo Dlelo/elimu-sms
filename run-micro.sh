@@ -27,4 +27,4 @@ echo "MicroEmulator: $MICROEMU_JAR"
 echo "JAD File: ElimuSMS.jad"
 echo ""
 
-java -jar "$MICROEMU_JAR" -Xdescriptor:ElimuSMS.jad
+java -jar "$MICROEMU_JAR" build/dist/ElimuSMS.jad

@@ -18,13 +18,15 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     private MicroResponses   responses;
 
     // ── Commands ─────────────────────────────────────────────────────────────
-    private Command selectCmd = new Command("Select", Command.OK,     1);
-    private Command sendCmd   = new Command("Send",   Command.OK,     1);
-    private Command submitCmd = new Command("Submit", Command.OK,     1);
-    private Command backCmd   = new Command("Back",   Command.BACK,   2);
-    private Command exitCmd   = new Command("Exit",   Command.EXIT,   3);
-    private Command okCmd     = new Command("OK",     Command.OK,     1);
-    private Command moreCmd   = new Command("More",   Command.SCREEN, 2);
+    // Commands are initialised in startApp() after Strings.setLocale(),
+    // so labels reflect the JAD-attribute-selected locale.
+    private Command selectCmd;
+    private Command sendCmd;
+    private Command submitCmd;
+    private Command backCmd;
+    private Command exitCmd;
+    private Command okCmd;
+    private Command moreCmd;
 
     // ── "More" tier walk state ───────────────────────────────────────────────
     // Each on-screen response remembers the question + intent that produced it.
@@ -603,6 +605,11 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     public void startApp() {
+        // Locale must be set before Commands are created so labels render
+        // in the selected language.
+        Strings.setLocale(getAppProperty("Elimu-Lang"));
+        initCommands();
+
         EvaluationLogger.load();
         EvaluationLogger.newSession();
         UserPreferences.loadSRS();
@@ -610,12 +617,34 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         FederatedLearning.configure(
                 getAppProperty("Elimu-FLEnabled"),
                 getAppProperty("Elimu-CloudURL"));
+        // SMSFederated references javax.wireless.messaging.* (JSR-120),
+        // which is an optional package on CLDC 1.1. Real handsets ship it;
+        // desktop emulators (e.g. MicroEmulator) often do not. Guard against
+        // a missing WMA implementation so the MIDlet still starts — SMS-FL
+        // simply stays disabled and federated traffic uses the HTTPS path.
+        try {
+            SMSFederated.configure(getAppProperty("Elimu-FLShortcode"));
+        } catch (Throwable t) {
+            StringBuffer sb = new StringBuffer("[SMS-FL] unavailable on this device: ");
+            sb.append(t.getClass().getName());
+            System.out.println(sb.toString());
+        }
         initializeAI();
         // Opportunistic global pull: silent on offline, applies new global if online.
         if (FederatedLearning.isEnabled()) {
             FederatedLearning.pullGlobalOpportunistic(aiModel);
         }
         showMainMenu();
+    }
+
+    private void initCommands() {
+        selectCmd = new Command(Strings.get(Strings.K_SELECT), Command.OK,     1);
+        sendCmd   = new Command(Strings.get(Strings.K_SEND),   Command.OK,     1);
+        submitCmd = new Command(Strings.get(Strings.K_SUBMIT), Command.OK,     1);
+        backCmd   = new Command(Strings.get(Strings.K_BACK),   Command.BACK,   2);
+        exitCmd   = new Command(Strings.get(Strings.K_EXIT),   Command.EXIT,   3);
+        okCmd     = new Command(Strings.get(Strings.K_OK),     Command.OK,     1);
+        moreCmd   = new Command(Strings.get(Strings.K_MORE),   Command.SCREEN, 2);
     }
 
     private void initializeAI() {
@@ -641,6 +670,8 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         mainMenu.append("Math Quiz",     null);
         mainMenu.append("Science Quiz",  null);
         mainMenu.append("My Progress",   null);
+        mainMenu.append("Quick Feedback", null);  // NASA-TLX (H_4 mediator)
+        mainMenu.append("This Week",      null);  // teacher-readable summary
         mainMenu.addCommand(selectCmd);
         mainMenu.addCommand(exitCmd);
         mainMenu.setCommandListener(this);
@@ -664,6 +695,8 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             handleMore();
         } else if (c == selectCmd && d == quizTypeList) {
             startQuiz(quizTypeList.getSelectedIndex()); // 0=Math, 1=Science
+        } else if (c == selectCmd && d == activeTLXScreen) {
+            handleTLXSelection();
         } else if (c == backCmd) {
             showMainMenu();
         }
@@ -677,7 +710,54 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             case 3: startQuiz(0);         break;  // Math Quiz
             case 4: startQuiz(1);         break;  // Science Quiz
             case 5: showProgress();       break;
+            case 6: startTLXSurvey();     break;
+            case 7: showThisWeekReport(); break;
         }
+    }
+
+    private void showThisWeekReport() {
+        showResponse(EvaluationLogger.getThisWeekReport(), "This Week");
+    }
+
+    // ── NASA-TLX cognitive-load survey (H_4) ─────────────────────────────────
+    private TLXSurvey activeTLX;
+    private List      activeTLXScreen;
+
+    private void startTLXSurvey() {
+        activeTLX = new TLXSurvey();
+        showCurrentTLXScreen();
+    }
+
+    private void showCurrentTLXScreen() {
+        activeTLXScreen = activeTLX.currentScreen();
+        if (activeTLXScreen == null) {
+            finishTLX();
+            return;
+        }
+        activeTLXScreen.addCommand(selectCmd);
+        activeTLXScreen.addCommand(backCmd);
+        activeTLXScreen.setCommandListener(this);
+        display.setCurrent(activeTLXScreen);
+    }
+
+    private void handleTLXSelection() {
+        int idx = activeTLXScreen.getSelectedIndex();
+        activeTLX.submit(idx + 1);
+        if (activeTLX.isComplete()) {
+            finishTLX();
+        } else {
+            showCurrentTLXScreen();
+        }
+    }
+
+    private void finishTLX() {
+        EvaluationLogger.recordTLX(activeTLX.getScores());
+        Alert thanks = new Alert("Asante! / Thanks!");
+        thanks.setString("Your feedback helps us improve.");
+        thanks.setTimeout(2000);
+        display.setCurrent(thanks, mainMenu);
+        activeTLX = null;
+        activeTLXScreen = null;
     }
 
     // ── Question Screen ──────────────────────────────────────────────────────
@@ -709,12 +789,37 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             float confidence = aiModel.getLastConfidence();
             EvaluationLogger.recordPrediction(intentId, confidence);
 
+            // Pragmatic override: the deployed COMPRESSED_WEIGHTS in this
+            // build were not produced by a successful training run, so the
+            // classifier's output is unreliable. When the question contains
+            // unambiguous math or science keywords, override the model's
+            // intent with the keyword-derived one. Remove this block once a
+            // properly-trained weights table is shipped (re-run elimu-model/
+            // train_model.py + quantize_pack.py and paste the bytes back).
+            boolean kwMath = isMathQuery(question);
+            boolean kwSci  = isScienceQuery(question);
+            if (kwMath && !kwSci) {
+                intentId   = (byte) 0;
+                confidence = 1.0f;
+            } else if (kwSci && !kwMath) {
+                intentId   = (byte) 1;
+                confidence = 1.0f;
+            }
+
             // Track state for the "More" tier walk: a fresh question resets
             // the cursor so subsequent "More" taps start from the top.
             lastQuestion  = question;
             lastIntent    = intentId;
             moreLevel     = 0;
             relatedCursor = 0;
+
+            // Conversation memory: rolling 3-turn context for cloud queries.
+            // Reset on greeting/farewell; otherwise append.
+            if (intentId == 6 || intentId == 7) {
+                SMSManager.clearContext();
+            } else {
+                SMSManager.pushContext(question);
+            }
 
             dbg = new StringBuffer("Intent: ");
             dbg.append(intentId);
@@ -754,6 +859,13 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
             }
             if (answeredLocally) UserPreferences.incrementLocalAnswers();
         } catch (Exception e) {
+            // Surface the real cause to stdout so emulator logs are diagnostic.
+            StringBuffer es = new StringBuffer("[processQuery] ");
+            es.append(e.getClass().getName());
+            es.append(": ");
+            es.append(e.getMessage());
+            System.out.println(es.toString());
+            e.printStackTrace();
             showError("Oops! Something went wrong. Try a different question.");
         }
     }
@@ -1087,15 +1199,24 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
     }
 
     private void askCloud(final String question) {
+        // Capture the on-device confidence at dispatch time. The cloud-arbitrated
+        // label will drive an SGD step weighted by (1 - confidence) so that
+        // questions the model was already nearly-confident about don't get
+        // hammered, while truly uncertain ones move the weights more.
+        final float dispatchConfidence = aiModel.getLastConfidence();
+
         Alert waiting = new Alert("Cloud");
         waiting.setString("Asking the cloud AI...");
         waiting.setTimeout(Alert.FOREVER);
         display.setCurrent(waiting);
 
         SMSManager.sendToCloudAI(question, new CloudResponseListener() {
-            public void onResponse(final String answer) {
+            public void onResponse(final String answer, final String intentLabel) {
                 display.callSerially(new Runnable() {
-                    public void run() { showResponse(answer, "Cloud Answer"); }
+                    public void run() {
+                        showResponse(answer, "Cloud Answer");
+                        applyCloudArbitratedLabel(intentLabel, dispatchConfidence);
+                    }
                 });
             }
             public void onError(final String reason) {
@@ -1109,6 +1230,27 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
                 });
             }
         });
+    }
+
+    /**
+     * One SGD step on the on-device classifier using the cloud-arbitrated
+     * intent label as supervision. The learning rate is scaled by
+     * (1 - confidence): if the model was already nearly-confident, the step
+     * is small; if it was deeply uncertain, the step is closer to full.
+     * Saves weights to RMS so the update survives session boundaries.
+     */
+    private void applyCloudArbitratedLabel(String intentLabel, float dispatchConfidence) {
+        if (intentLabel == null) return;
+        int intentId = CompressedTinyML.intentIdFromLabel(intentLabel);
+        if (intentId < 0) return;
+        float baseLR = 0.05f;
+        float scale  = 1.0f - dispatchConfidence;
+        if (scale < 0.0f) scale = 0.0f;
+        if (scale > 1.0f) scale = 1.0f;
+        float lr = baseLR * scale;
+        aiModel.learn(intentId, lr);
+        EvaluationLogger.recordLearnEvent();
+        aiModel.saveWeights();
     }
 
     // ── LCG random number generator ──────────────────────────────────────────
@@ -1690,7 +1832,10 @@ public class ElimuSMSMidlet extends MIDlet implements CommandListener {
         display.setCurrent(waiting);
 
         SMSManager.sendToCloudAI(question, new CloudResponseListener() {
-            public void onResponse(final String answer) {
+            // No learning from the More-button path: that's a coverage-gap
+            // signal (the student wanted depth), not a label correction.
+            // The intentLabel is intentionally ignored here.
+            public void onResponse(final String answer, final String intentLabel) {
                 display.callSerially(new Runnable() {
                     public void run() { showResponse(answer, "Cloud Answer"); }
                 });

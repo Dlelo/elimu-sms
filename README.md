@@ -119,12 +119,92 @@ Outputs:
 A successful build prints `Build completed successfully!` and the JAR should
 be under ~50 KB.
 
+## Run locally — quick start
+
+After a successful build, the fastest way to see the system working
+end-to-end on your laptop is:
+
+```bash
+# (1) Build the MIDlet
+ant clean build
+
+# (2) Start the cloud server in a separate terminal
+make server          # or: cd cloud-server && python server.py
+
+# (3) Launch the emulator
+java -jar lib/microemulator-2.0.4.jar build/dist/ElimuSMS.jad
+```
+
+Open the emulator and tap *Ask Question*. High-confidence queries (e.g.
+*"what is photosynthesis?"*) answer instantly from the on-device
+classifier; low-confidence ones tap the cloud server you started in
+step (2).
+
+To exercise the full cloud-fallback path you need to point the MIDlet
+at your local server. **One-time JAD edit:** open
+`build/dist/ElimuSMS.jad` and change the URL line to:
+
+```
+Elimu-CloudURL: http://localhost:8080/v1/query
+```
+
+The default ships pointing at `api.elimu-ai.org`, which is not yet
+hosted. Restart the emulator after editing.
+
+If you only want to test the on-device classifier, OK/More UX,
+quizzes, or *This Week* report, you can skip step (2) entirely — the
+emulator works fine offline.
+
+For just running checks without launching the UI:
+```bash
+make test            # J2ME compile + 30 property tests
+make simulate        # catastrophic-forgetting curve → simulators/forgetting.csv
+```
+
+### Triggering server-side retraining (Loop 3)
+
+The cloud server can retrain the on-device classifier from the
+labelled corpus and push the new weights to all devices through the
+existing federated-learning pull channel. No manual paste step, no
+rebuild — devices receive the retrained weights on their next
+opportunistic `GET /v1/fl/global`.
+
+Start the server with an admin token (and optionally a scheduled
+retrain cadence):
+
+```bash
+ADMIN_TOKEN="some-secret" \
+AUTO_RETRAIN_INTERVAL_HOURS=24 \
+make server
+```
+
+Then trigger a retrain manually:
+
+```bash
+curl -X POST -H "X-Admin-Token: some-secret" \
+     http://localhost:8080/v1/admin/retrain
+# {"n_samples": 1074, "train_accuracy": 0.74, "quantised_accuracy": 0.63,
+#  "promoted": true, "new_fl_round": 4}
+```
+
+Confirm the device sees the new global on its next pull:
+
+```bash
+curl -s http://localhost:8080/v1/fl/global | head -c 4 | xxd
+# 00000000: 0000 0004                                ....
+# (round 4 — the retrain bumped the round counter)
+```
+
+Append new examples to `elimu-model/data/training_data_enhanced.csv`,
+re-trigger, and the cohort's classifier improves without any
+device-side change.
+
 ## Run on an emulator
 
 ### Option A — MicroEmulator (recommended for quick iteration)
 
 ```bash
-java -jar lib/microemulator-2.0.4.jar -Xdescriptor:build/dist/ElimuSMS.jad
+java -jar lib/microemulator-2.0.4.jar build/dist/ElimuSMS.jad
 ```
 
 Or use the helper script (downloads location is hard-coded — edit if needed):

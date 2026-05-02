@@ -73,6 +73,16 @@ AGG_THRESHOLD_N        = 5
 AGG_INTERVAL_SECONDS   = 7 * 24 * 60 * 60   # one week
 STALE_ANCHOR_TOLERANCE = 3                  # accept deltas up to 3 rounds old
 
+# Aggregator selection: env var FL_AGGREGATOR ∈ {mean, trimmed_mean, krum}
+#   mean         — vanilla FedAvg; one byzantine device can dominate.
+#   trimmed_mean — discard top-k and bottom-k extremes per coordinate.
+#                  Tolerates up to k byzantine clients out of n.
+#   krum         — pick the single delta closest to (n-f-2) others by L2
+#                  distance. Tolerates up to f byzantine clients with
+#                  n >= 2f+3 (Blanchard et al. 2017).
+TRIMMED_K_FRACTION = 0.20  # discard 20% from each end of every coordinate
+KRUM_F_FRACTION    = 0.20  # assume up to 20% of clients are byzantine
+
 
 # ── Nibble (4-bit) codec — matches CompressedTinyML.getRawWeight() ───────────
 
@@ -138,11 +148,12 @@ class FLState:
     immediately, so server restarts pick up where they left off.
     """
 
-    def __init__(self, state_dir: str | os.PathLike):
+    def __init__(self, state_dir, aggregator: str = "mean"):
         self.dir = Path(state_dir)
         self.deltas_dir = self.dir / "deltas"
         self.deltas_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        self.aggregator = aggregator
 
         self.global_path  = self.dir / "global.npy"
         self.round_path   = self.dir / "round.txt"
@@ -224,8 +235,8 @@ class FLState:
         if not delta_files:
             return
         deltas = np.stack([np.load(p) for p in delta_files])
-        mean_delta = deltas.mean(axis=0).astype(np.float32)
-        self.global_model = self.global_model + mean_delta
+        agg_delta = aggregate(deltas, mode=self.aggregator).astype(np.float32)
+        self.global_model = self.global_model + agg_delta
         # Clip to [-1, 1] so the next round's anchor still fits the nibble range.
         np.clip(self.global_model, -1.0, 1.0, out=self.global_model)
         self.round += 1
@@ -254,3 +265,55 @@ class FLState:
     @staticmethod
     def _write(path: Path, contents: str) -> None:
         path.write_text(contents)
+
+
+# ── Robust aggregators ──────────────────────────────────────────────────────
+
+def aggregate(deltas: np.ndarray, mode: str = "mean") -> np.ndarray:
+    """
+    Aggregate `deltas` (shape [n, p]) into a single 1-D update of length p.
+
+    mode='mean'         — vanilla FedAvg.
+    mode='trimmed_mean' — discard top-k and bottom-k per coordinate before
+                          averaging. Robust against up to k byzantine clients.
+    mode='krum'         — Krum (Blanchard et al. 2017): pick the single
+                          delta whose sum-of-squared-distances to its
+                          (n - f - 2) closest neighbours is smallest.
+                          Robust to up to f byzantine clients with
+                          n >= 2f + 3.
+    """
+    if mode == "mean" or deltas.shape[0] < 3:
+        return deltas.mean(axis=0)
+    if mode == "trimmed_mean":
+        return _trimmed_mean(deltas)
+    if mode == "krum":
+        return _krum(deltas)
+    raise ValueError(f"unknown aggregator: {mode}")
+
+
+def _trimmed_mean(deltas: np.ndarray) -> np.ndarray:
+    n = deltas.shape[0]
+    k = max(1, int(n * TRIMMED_K_FRACTION))
+    if 2 * k >= n:
+        k = (n - 1) // 2
+    sorted_per_coord = np.sort(deltas, axis=0)
+    trimmed = sorted_per_coord[k : n - k]
+    return trimmed.mean(axis=0)
+
+
+def _krum(deltas: np.ndarray) -> np.ndarray:
+    n = deltas.shape[0]
+    f = max(1, int(n * KRUM_F_FRACTION))
+    if n < 2 * f + 3:
+        # Not enough clients for Krum's guarantee — fall back to trimmed mean.
+        return _trimmed_mean(deltas)
+    # Pairwise squared L2 distances.
+    diff = deltas[:, None, :] - deltas[None, :, :]
+    sqd  = np.einsum("ijk,ijk->ij", diff, diff)
+    np.fill_diagonal(sqd, np.inf)
+    # For each i, sum of distances to its (n - f - 2) closest others.
+    k_neighbours = n - f - 2
+    sorted_d = np.sort(sqd, axis=1)
+    scores   = sorted_d[:, :k_neighbours].sum(axis=1)
+    chosen   = int(np.argmin(scores))
+    return deltas[chosen]
