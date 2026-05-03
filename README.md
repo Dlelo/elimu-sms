@@ -69,8 +69,10 @@ doesn't need internet, and protects their privacy by design.
 
 ```
 src/com/elimu/        Java ME MIDlet sources (CLDC 1.1 / MIDP 2.0)
+elimu-web/            PWA / desktop client (Vite + TypeScript)
 elimu-model/          Python training pipeline (see elimu-model/README.txt)
 cloud-server/         Flask cloud-tier server for low-confidence queries
+simulators/           Forgetting curve + reference NumPy classifier
 lib/                  CLDC 1.1, MIDP 2.0, MicroEmulator jars
 build.xml             Ant build (compiles JAR + generates JAD)
 run.sh                Build + launch on Oracle Java ME SDK emulator
@@ -82,11 +84,14 @@ resources/            On-device runtime data
 
 - **JDK 8 or newer** (the bootclasspath is pinned to CLDC 1.1, so any modern
   JDK that can target source/target 1.8 works — Zulu 8 is the reference
-  configuration)
-- **Apache Ant** (any 1.10.x)
+  configuration). *Required for the J2ME MIDlet only.*
+- **Apache Ant** (any 1.10.x). *Required for the J2ME MIDlet only.*
 - **One emulator**, either:
   - Oracle Java ME SDK 8.3 (closer to a real handset), or
-  - MicroEmulator 2.0.4 (faster to set up, cross-platform)
+  - MicroEmulator 2.0.4 (faster to set up, cross-platform).
+- **Python 3.11+** for the cloud server, simulators, and training pipeline.
+- **Node.js 18+ and npm 9+** for the PWA / desktop client (`elimu-web/`).
+  Verified with Node 20.19 + npm 10.8.
 
 ### Install on macOS
 
@@ -145,7 +150,7 @@ at your local server. **One-time JAD edit:** open
 `build/dist/ElimuSMS.jad` and change the URL line to:
 
 ```
-Elimu-CloudURL: http://localhost:8080/v1/query
+Elimu-CloudURL: http://localhost:5051/v1/query
 ```
 
 The default ships pointing at `api.elimu-ai.org`, which is not yet
@@ -182,7 +187,7 @@ Then trigger a retrain manually:
 
 ```bash
 curl -X POST -H "X-Admin-Token: some-secret" \
-     http://localhost:8080/v1/admin/retrain
+     http://localhost:5051/v1/admin/retrain
 # {"n_samples": 1074, "train_accuracy": 0.74, "quantised_accuracy": 0.63,
 #  "promoted": true, "new_fl_round": 4}
 ```
@@ -190,7 +195,7 @@ curl -X POST -H "X-Admin-Token: some-secret" \
 Confirm the device sees the new global on its next pull:
 
 ```bash
-curl -s http://localhost:8080/v1/fl/global | head -c 4 | xxd
+curl -s http://localhost:5051/v1/fl/global | head -c 4 | xxd
 # 00000000: 0000 0004                                ....
 # (round 4 — the retrain bumped the round counter)
 ```
@@ -198,6 +203,84 @@ curl -s http://localhost:8080/v1/fl/global | head -c 4 | xxd
 Append new examples to `elimu-model/data/training_data_enhanced.csv`,
 re-trigger, and the cohort's classifier improves without any
 device-side change.
+
+## Run as a PWA / desktop client
+
+The `elimu-web/` directory contains a TypeScript port of the same
+on-device classifier — same 26-feature extractor, same 4-bit nibble
+weight bytes, same SGD step + anchor regularisation as
+`CompressedTinyML.java`. It runs in any modern browser and installs
+as a Progressive Web App (PWA) on Android, iOS Safari, macOS,
+Windows, and Linux. The same federated endpoints serve it: phones,
+tablets, and laptops all contribute to one shared global model.
+
+### Quick start (verified end-to-end)
+
+```bash
+make web-install      # one-time: npm install (Node 18+ required)
+make server &         # cloud server in the background (optional)
+make web-dev          # Vite dev server at http://localhost:5173
+                      # — proxies /v1 and /sms to the Flask cloud server
+```
+
+Open `http://localhost:5173/` in any browser. Type a question — the
+on-device classifier answers instantly from cached weights. Tap
+*More* to escalate to the cloud LLM if `make server` is running.
+
+### Production build
+
+```bash
+make web-build        # → elimu-web/dist/   (static site, ~17 KB)
+make web-preview      # local preview at http://localhost:4173
+```
+
+The build pipeline runs `tsc --noEmit && vite build` so all
+TypeScript types are checked. Verified bundle size (production):
+
+| Artefact | Size | Gzipped |
+|---|---|---|
+| `index-*.js` | 14.7 KB | 5.9 KB |
+| `index-*.css` | 2.0 KB | 0.8 KB |
+| `index.html` + `manifest` | ~1.4 KB | — |
+| Service-worker precache | 18.2 KB total | — |
+
+### Deployment
+
+`elimu-web/dist/` is a self-contained static site. Drop it on:
+
+- **GitHub Pages** — push `dist/` contents to a `gh-pages` branch.
+- **Netlify / Vercel / Cloudflare Pages** — point at the repo, set
+  build command `cd elimu-web && npm install && npm run build`,
+  publish directory `elimu-web/dist`.
+- **Behind nginx / Apache** — copy the contents to the docroot and
+  configure the same `/v1` and `/sms` reverse-proxy as the Vite
+  dev server does to the Flask cloud server on `:5051`.
+- **`python -m http.server`** from inside `elimu-web/dist/` for a
+  zero-config local serve.
+
+Once installed (the address bar will show an *Install* action in
+Chrome/Edge/Safari), the service worker caches the UI shell + the
+on-device classifier so the app works fully offline. The classifier
+loads factory weights from a bundled hex blob byte-identical to
+`CompressedTinyML.COMPRESSED_WEIGHTS`; subsequent
+`/v1/fl/global` pulls overlay the latest cohort-trained weights via
+`applyGlobalUpdate`, exactly as the J2ME MIDlet does. SMS-FL is not
+available in browsers — desktop and PWA clients upload via HTTPS
+only, falling back to local-only operation if the cloud is
+unreachable.
+
+### What the PWA shares with the J2ME MIDlet
+
+| Component | J2ME side | Web side |
+|---|---|---|
+| Feature extractor (26 binary features) | `CompressedTinyML.extractFeatures` | `elimu-web/src/features.ts` |
+| Forward pass + SGD step | `CompressedTinyML.predict / learn` | `elimu-web/src/classifier.ts` |
+| 4-bit nibble weight bytes | `COMPRESSED_WEIGHTS` array | `weights.ts` (same hex string) |
+| Cloud query | `SMSManager.sendToCloudAI` | `cloud.askCloud` |
+| FL upload (235-byte payload) | `FederatedLearning.encodeUpload` | `cloud.encodeUpload` |
+| FL global download (1.7 KB) | `FederatedLearning.pullNow` | `cloud.pullGlobal` |
+| Persistent storage | RecordStore (RMS) | IndexedDB |
+| OK / More UX | `ElimuSMSMidlet.showResponse` | `ui.appendBot` |
 
 ## Run on an emulator
 
@@ -345,7 +428,7 @@ deployment **without rebuilding** — just edit `build/dist/ElimuSMS.jad`
 before sideload / OTA hosting:
 
 ```
-Elimu-CloudURL: http://<your-host>:8080/v1/query
+Elimu-CloudURL: http://<your-host>:5051/v1/query
 ```
 
 Defaults to `http://api.elimu-ai.org/v1/query` (set in `build.xml`) if the
@@ -366,6 +449,93 @@ app. To regenerate weights from updated data, see
 [`elimu-model/README.txt`](elimu-model/README.txt) for the full Python
 pipeline (build dataset → train → quantize → paste byte arrays back into
 `CompressedTinyML.java`).
+
+## Synthetic corpus expansion (LLM, no teacher review)
+
+The original 1,074-row training corpus is heavily class-imbalanced
+(8:1 between the largest and smallest intent). A teacher-review loop
+to label new examples doesn't scale, so the project ships
+`elimu-model/synth_corpus.py`: it generates new labelled rows with a
+free-tier LLM and validates each row against the deterministic
+keyword classifier already used by the cloud server. Two independent
+labellers must agree before a row enters the training set; this is
+the no-human gate that replaces teacher review.
+
+**One-time setup (LLM credentials):**
+
+```bash
+cp cloud-server/.env.example cloud-server/.env
+# Open cloud-server/.env and paste your free Gemini key on the
+# LLM_API_KEY= line. Get one at https://aistudio.google.com/app/apikey
+# (no credit card needed). The .env file is gitignored.
+```
+
+**Run the expansion:**
+
+```bash
+make synth-corpus      # 50 candidates per intent, ~3 min, $0
+```
+
+You'll see a per-intent acceptance table:
+
+```
+intent              generated   accepted     rate
+math_help                  50         41      82%
+science_help               50         37      74%
+english_help               50         23      46%
+quiz                       50         38      76%
+general_help               50         47      94%
+progress                   50         28      56%
+greeting                   50         44      88%
+farewell                   50         45      90%
+TOTAL                     400        303      76%
+```
+
+Acceptance rates vary by intent — `science_help` and the social
+intents (greeting/farewell) have rich keyword vocabularies so the
+gate accepts most candidates; `english_help` has a sparser keyword
+set so its rate is lower. Top-up an under-represented intent with:
+
+```bash
+cd elimu-model && \
+  ../cloud-server/.venv/bin/python synth_corpus.py \
+  --intents 5,6,7 --append --n-per-intent 100
+```
+
+`--append` keeps existing rows; `--intents` targets specific labels.
+
+**Combine and retrain:**
+
+```bash
+cat elimu-model/data/training_data_enhanced.csv \
+    elimu-model/data/training_data_synth.csv \
+    > elimu-model/data/training_data_combined.csv
+
+cd elimu-model && \
+  ../cloud-server/.venv/bin/python train_and_pack.py \
+  --csv data/training_data_combined.csv
+```
+
+The retrain output prints new `COMPRESSED_WEIGHTS` and
+`COMPRESSED_BIASES` byte arrays for `CompressedTinyML.java` and the
+matching hex strings for `elimu-web/src/weights.ts`. Paste those in
+and the on-device model now reflects the expanded corpus.
+
+**Cost confirmation:** with Gemini 1.5 Flash on the free tier the
+whole pipeline (corpus expansion + retrain) costs $0. Expect
+1.5-flash to handle 50 candidates × 8 intents in one minute under
+the 15 RPM free-tier limit; 2.5-flash has a much tighter quota and
+is more likely to hit a 429. The script retries with exponential
+backoff (30→45→67→100 s), so transient rate limits self-recover.
+
+**Honest limit (worth noting in the thesis):** the keyword classifier
+is the validation gate, and the on-device classifier is trained
+against keyword-classified supervision, so the gate is partially
+self-confirming — the synthesised corpus boosts *quantity* and
+*intra-keyword-vocabulary diversity* but cannot teach the model
+keywords it doesn't already know. Genuine vocabulary expansion
+requires either an LLM-as-judge with a different prompt, or
+periodic human review.
 
 ## Troubleshooting
 

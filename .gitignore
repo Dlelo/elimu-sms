@@ -26,5 +26,16 @@ venv/
 .idea/
 .vscode/
 
+# Secrets — never commit
+.env
+*.env
+!.env.example
+
 # OS
 .DS_Store
+
+# Web client (elimu-web)
+elimu-web/node_modules/
+elimu-web/dist/
+elimu-web/dev-dist/
+elimu-web/.vite/

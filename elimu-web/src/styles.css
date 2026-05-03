@@ -1,0 +1,89 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #1b2330;
+  --accent: #0f4f8b;
+  --accent-fg: #ffffff;
+  --bubble-self: #0f4f8b;
+  --bubble-self-fg: #ffffff;
+  --bubble-bot: #e6ecf2;
+  --bubble-bot-fg: #1b2330;
+  --muted: #6a737d;
+  --border: #d6dbe1;
+  --more: #e8eef5;
+  --ok: #b7d8b3;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body { display: flex; flex-direction: column; }
+
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--accent); color: var(--accent-fg);
+}
+header h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
+.status {
+  font-size: 0.8rem; padding: 0.15rem 0.5rem;
+  background: rgba(255,255,255,0.18); border-radius: 1rem;
+}
+.status.online { background: rgba(140,210,140,0.4); }
+
+.chat {
+  flex: 1; overflow-y: auto;
+  padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem;
+}
+.bubble {
+  max-width: 80%; padding: 0.55rem 0.85rem; border-radius: 1rem;
+  white-space: pre-wrap; line-height: 1.4; font-size: 0.95rem;
+}
+.bubble.user {
+  align-self: flex-end;
+  background: var(--bubble-self); color: var(--bubble-self-fg);
+  border-bottom-right-radius: 0.25rem;
+}
+.bubble.bot {
+  align-self: flex-start;
+  background: var(--bubble-bot); color: var(--bubble-bot-fg);
+  border-bottom-left-radius: 0.25rem;
+}
+.bubble .meta {
+  display: block; margin-top: 0.3rem;
+  font-size: 0.72rem; color: var(--muted);
+}
+.actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+.actions button {
+  border: 1px solid var(--border); background: var(--more);
+  color: var(--fg); padding: 0.25rem 0.7rem;
+  border-radius: 0.5rem; font-size: 0.8rem; cursor: pointer;
+}
+.actions button.ok { background: var(--ok); }
+
+.composer {
+  display: flex; gap: 0.5rem; padding: 0.6rem;
+  border-top: 1px solid var(--border); background: #fff;
+}
+.composer input {
+  flex: 1; padding: 0.6rem 0.75rem; font-size: 1rem;
+  border: 1px solid var(--border); border-radius: 0.5rem;
+  background: #fff; color: var(--fg);
+}
+.composer button {
+  padding: 0.6rem 1.1rem; font-weight: 600;
+  background: var(--accent); color: var(--accent-fg);
+  border: 0; border-radius: 0.5rem; cursor: pointer;
+}
+
+.footer {
+  font-size: 0.72rem; text-align: center; color: var(--muted);
+  padding: 0.4rem 0.5rem; border-top: 1px solid var(--border);
+  background: #fff;
+}

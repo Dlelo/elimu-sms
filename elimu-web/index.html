@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f4f8b" />
+    <title>ElimuSMS</title>
+    <link rel="icon" type="image/svg+xml" href="./icon-192.svg" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>ElimuSMS</h1>
+      <span id="status" class="status">offline</span>
+    </header>
+    <main id="chat" class="chat" aria-live="polite"></main>
+    <form id="composer" class="composer">
+      <input id="q" type="text" placeholder="Ask a math or science question…"
+             autocomplete="off" autofocus required />
+      <button type="submit">Ask</button>
+    </form>
+    <footer class="footer" id="footer">on-device · 26-feature MLP · 4-bit weights</footer>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

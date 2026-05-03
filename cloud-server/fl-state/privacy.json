@@ -1,0 +1,11 @@
+{
+  "14dda0f655281c4bf32273b4b30e63aa": {
+    "cumulative_epsilon_advanced": 2205.062433973857,
+    "cumulative_epsilon_basic": 2205.062433973857,
+    "delta": 1e-05,
+    "epsilon_per_round": 200.46022127035062,
+    "rounds": 11,
+    "sensitivity": 2.0688160865577205,
+    "sigma": 0.05
+  }
+}

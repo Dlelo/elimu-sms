@@ -1,0 +1,17 @@
+{
+  "name": "elimu-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ElimuSMS web/desktop client — PWA that reuses the J2ME architecture (on-device classifier, cloud fallback, federated learning) without the feature-phone constraints.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vite-plugin-pwa": "^0.20.0"
+  }
+}

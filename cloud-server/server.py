@@ -47,7 +47,7 @@ LLM_API_KEY  = os.environ.get("LLM_API_KEY", "ollama")
 LLM_MODEL    = os.environ.get("LLM_MODEL", "llama3.2:3b")
 LLM_MAX_TOK  = int(os.environ.get("LLM_MAX_TOKENS", "200"))
 LLM_TEMP     = float(os.environ.get("LLM_TEMPERATURE", "0.3"))
-PORT         = int(os.environ.get("PORT", "8080"))
+PORT         = int(os.environ.get("PORT", "5051"))
 FL_STATE_DIR  = os.environ.get("FL_STATE_DIR", "./fl-state")
 FL_AGGREGATOR = os.environ.get("FL_AGGREGATOR", "mean")  # mean|trimmed_mean|krum
 AUTO_RETRAIN_INTERVAL_HOURS = float(
@@ -83,7 +83,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("elimu-cloud")
 
-client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+LLM_TIMEOUT_S = float(os.environ.get("LLM_TIMEOUT_S", "8"))
+# Fail fast: max_retries=0 so a wedged backend doesn't sit on the request
+# long enough for the upstream proxy (Vite, nginx) to ECONNRESET.
+client = OpenAI(
+    base_url=LLM_BASE_URL,
+    api_key=LLM_API_KEY,
+    timeout=LLM_TIMEOUT_S,
+    max_retries=0,
+)
 fl_state = FLState(FL_STATE_DIR, aggregator=FL_AGGREGATOR)
 privacy_ledger = PrivacyLedger(os.path.join(FL_STATE_DIR, "privacy.json"))
 start_scheduler(fl_state, AUTO_RETRAIN_INTERVAL_HOURS)
@@ -122,8 +130,12 @@ def query():
             ],
         )
         answer = (completion.choices[0].message.content or "").strip()
-    except Exception:
-        log.exception("LLM call failed")
+    except Exception as e:
+        # Common case: backend (e.g. local Ollama) isn't running. Log a
+        # one-liner instead of a 60-line traceback; the client still gets
+        # a clean 503 and the PWA's offline-tier fallback handles the UX.
+        log.warning("LLM call failed (%s): %s — returning 503",
+                    type(e).__name__, str(e).split("\n")[0][:120])
         return _plain(
             "Server iko busy. Jaribu tena. (Server is busy. Try again.)",
             503,
@@ -317,7 +329,40 @@ def _plain(text, status):
     return Response(text, status=status, mimetype="text/plain; charset=utf-8")
 
 
+def _check_llm_reachable() -> tuple[bool, str]:
+    """Quick pre-flight against the configured LLM. Returns (ok, msg)."""
+    try:
+        # Tiny 1-token completion is the cheapest reachability probe.
+        client.chat.completions.create(
+            model=LLM_MODEL, max_tokens=1, temperature=0.0,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        return True, "reachable"
+    except Exception as e:
+        return False, f"{type(e).__name__}: {str(e).splitlines()[0][:80]}"
+
+
+def _print_banner() -> None:
+    print("=" * 70)
+    print(f"  ElimuSMS cloud server  port :{PORT}")
+    print(f"  LLM backend            {LLM_BASE_URL}")
+    print(f"  LLM model              {LLM_MODEL}")
+    print(f"  FL aggregator          {FL_AGGREGATOR}")
+    print(f"  FL state dir           {FL_STATE_DIR}")
+    print("-" * 70)
+    ok, msg = _check_llm_reachable()
+    if ok:
+        print(f"  ✓ LLM reachable — /v1/query will return generated answers")
+    else:
+        print(f"  ⚠ LLM UNREACHABLE — /v1/query will fast-fail with 503")
+        print(f"    {msg}")
+        print(f"    Hint: install Ollama (brew install ollama && ollama serve)")
+        print(f"    or set LLM_BASE_URL + LLM_API_KEY to a remote backend.")
+    print("=" * 70)
+
+
 if __name__ == "__main__":
+    _print_banner()
     log.info(
         "starting on :%d backend=%s model=%s",
         PORT, LLM_BASE_URL, LLM_MODEL,
