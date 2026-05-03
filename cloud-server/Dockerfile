@@ -1,7 +1,7 @@
 # ElimuSMS cloud-tier server.
 #
 # Build: docker build -t elimu-cloud cloud-server/
-# Run:   docker run --rm -p 8080:8080 \
+# Run:   docker run --rm -p 5051:5051 \
 #          -e LLM_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai/" \
 #          -e LLM_API_KEY="<your-gemini-key>" \
 #          -e LLM_MODEL="gemini-1.5-flash" \
@@ -31,14 +31,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the server code.
 COPY classify.py fl.py metrics.py privacy.py server.py ./
 
-# Default port 8080; override with -e PORT=NNNN.
-EXPOSE 8080
+# Default port 5051; override with -e PORT=NNNN.
+EXPOSE 5051
 
 # Persist FL state outside the image.
 ENV FL_STATE_DIR=/state
 RUN mkdir -p /state
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -fsS "http://localhost:${PORT:-8080}/health" || exit 1
+  CMD curl -fsS "http://localhost:${PORT:-5051}/health" || exit 1
 
 CMD ["python", "server.py"]
