@@ -120,6 +120,11 @@ async function onSubmit(e: Event): Promise<void> {
   } else if (kwSci && !kwMath) {
     intent = 1; confidence = 1.0;
   }
+
+  // Intent 2 (english_help) is retired — the model now focuses on STEM only.
+  // Any leftover prediction in that slot (rare; no training data points to
+  // intent 2) routes to general_help so the user still gets a useful reply.
+  if (intent === 2) intent = 4;
   const intentLabel = INTENT_NAMES[intent]!;
 
   // High confidence (model or keyword override) → answer locally.
@@ -236,7 +241,10 @@ function localResponse(intent: string, _q: string): string {
     case "science_help":
       return "Science: photosynthesis, food chains, vertebrates, circulatory system, soil types, states of matter, simple machines. Tap More for depth.";
     case "english_help":
-      return "English: nouns, verbs, adjectives, tense, composition, comprehension. Tap More for examples.";
+      // Retired — STEM-only system. If the model ever lands here we route
+      // to general_help (see processQuery), so this branch is unreachable
+      // in practice. Kept for label-table compatibility.
+      return "I help with math and science. Try a STEM question.";
     case "quiz":
       return "Quizzes are coming to the web client — for now, ask a topic question.";
     case "progress":

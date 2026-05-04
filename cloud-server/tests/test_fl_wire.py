@@ -163,7 +163,9 @@ def test_unknown_aggregator_rejected():
     ("habari",                 "greeting"),
     ("kwaheri",                "farewell"),
     ("show my progress",       "progress"),
-    ("what is a noun",         "english_help"),
+    # english_help is retired (STEM-only focus); grammar questions now fall
+    # through the keyword rules and land on general_help.
+    ("what is a noun",         "general_help"),
     ("",                       "general_help"),
     ("bogus garbled question", "general_help"),
 ])

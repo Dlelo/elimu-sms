@@ -65,10 +65,11 @@ _RULES = [
         # generic plant/animal
         "plant", "animal", "living",
     }),
-    ("english_help", {
-        "noun", "verb", "grammar", "tense", "adjective", "adverb",
-        "comprehension", "composition", "english",
-    }),
+    # english_help (intent 2) is retired in favour of STEM-only focus.
+    # The keyword rule is removed so classify_intent never returns
+    # "english_help"; English-grammar questions fall through to
+    # general_help. The label is retained in INTENT_LABELS below for
+    # index stability with the federated wire format.
 ]
 
 INTENT_LABELS = [

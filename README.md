@@ -57,7 +57,12 @@ doesn't need internet, and protects their privacy by design.
 
 - **Target JAR size:** ~45 KB (down from ~300 KB)
 - **Compression:** 85% reduction via 4-bit quantization + 70% pruning
-- **On-device intent classifier:** 26-feature MLP, 8 intents, ~91.79% test accuracy
+- **On-device intent classifier:** 26-feature MLP. Eight output slots —
+  seven actively trained (math, science, quiz, general help, progress,
+  greeting, farewell); the eighth (`english_help`) is retired in favour
+  of a **STEM-only focus** and retained for wire-format backward
+  compatibility. Quantised test accuracy ~72% on the STEM-only +
+  synth-augmented corpus (was ~63.5% before).
 - **Cloud fallback:** low-confidence queries are dispatched to a generative
   AI backend over HTTP; the device falls back to local templates if the
   cloud is unreachable
@@ -482,19 +487,21 @@ You'll see a per-intent acceptance table:
 intent              generated   accepted     rate
 math_help                  50         41      82%
 science_help               50         37      74%
-english_help               50         23      46%
+english_help                -          -       -    (retired; STEM-only focus)
 quiz                       50         38      76%
 general_help               50         47      94%
 progress                   50         28      56%
 greeting                   50         44      88%
 farewell                   50         45      90%
-TOTAL                     400        303      76%
+TOTAL                     350        280      80%
 ```
 
 Acceptance rates vary by intent — `science_help` and the social
 intents (greeting/farewell) have rich keyword vocabularies so the
-gate accepts most candidates; `english_help` has a sparser keyword
-set so its rate is lower. Top-up an under-represented intent with:
+gate accepts most candidates; `progress` has a sparser keyword set
+so its rate is lower. The `english_help` slot is retired (the model
+focuses on STEM mathematics and science) and the synth script skips
+it by default. Top-up an under-represented intent with:
 
 ```bash
 cd elimu-model && \
@@ -523,7 +530,7 @@ and the on-device model now reflects the expanded corpus.
 
 **Cost confirmation:** with Gemini 1.5 Flash on the free tier the
 whole pipeline (corpus expansion + retrain) costs $0. Expect
-1.5-flash to handle 50 candidates × 8 intents in one minute under
+1.5-flash to handle 50 candidates × 7 active intents in one minute under
 the 15 RPM free-tier limit; 2.5-flash has a much tighter quota and
 is more likely to hit a 429. The script retries with exponential
 backoff (30→45→67→100 s), so transient rate limits self-recover.
