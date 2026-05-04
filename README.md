@@ -450,7 +450,7 @@ app. To regenerate weights from updated data, see
 pipeline (build dataset → train → quantize → paste byte arrays back into
 `CompressedTinyML.java`).
 
-## Synthetic corpus expansion (LLM, no teacher review)
+## Synthetic corpus expansion (LLM)
 
 The original 1,074-row training corpus is heavily class-imbalanced
 (8:1 between the largest and smallest intent). A teacher-review loop
@@ -459,7 +459,7 @@ to label new examples doesn't scale, so the project ships
 free-tier LLM and validates each row against the deterministic
 keyword classifier already used by the cloud server. Two independent
 labellers must agree before a row enters the training set; this is
-the no-human gate that replaces teacher review.
+the no-human gate.
 
 **One-time setup (LLM credentials):**
 
